@@ -1,0 +1,37 @@
+# 依赖与缓存
+node_modules/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# 运行时产物（不进仓库）
+logs/
+.workbuddy/
+output/
+pdf/
+input/
+cloud/
+*.log
+
+# 大文件与样本
+*.apk
+*.exe
+*.zip
+*.asar
+*.7z
+
+# 本地配置与凭据（绝不提交）
+config.json
+.env
+.env.*
+*.pem
+*.key
+
+# 编辑器
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 本地密钥（含 AES 主密钥），绝不入库
+web-toolbox/config.local.js

@@ -1,0 +1,13 @@
+{
+  "_说明": "目录约定：笔记(HTML)从 outputDir 读，生成的 PDF 写到 pdfDir，上传成功后记录在 stateFile。若实际方向相反，只改 outputDir 这一行即可。",
+  "outputDir": "output",
+  "pdfDir": "pdf",
+  "stateFile": ".workbuddy/uploaded.json",
+  "cdpEndpoint": "http://127.0.0.1:9222",
+  "toolboxUrlPart": "127.0.0.1:8088",
+  "noteTitleFormat": "M月D日HH:mm:ss",
+  "pageSize": {
+    "width": 1240,
+    "height": 1754
+  }
+}

@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "answer-pipeline"
+version = "0.1.0"
+description = "题目素材监测、队列去重、答案渲染与结构自检，产出打印就绪的单文件横版 HTML"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "answer-pipeline" }]
+keywords = ["html", "katex", "print", "workflow", "automation"]
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+answer = "answer_pipeline.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+answer_pipeline = ["assets/katex/*.js", "assets/katex/*.css", "assets/katex/fonts/*.woff2"]

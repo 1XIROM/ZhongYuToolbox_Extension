@@ -1,0 +1,2563 @@
+<!DOCTYPE html>
+<html lang="zh-cn">
+
+<head>
+    <title>中育ToolBox</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/x-icon" href="icon.png">
+    <link id=theme rel="stylesheet" href="bootswatch.min.css">
+    <link rel="stylesheet" href="DPlayer.min.css">
+    <script src="jszip.min.js"></script>
+    <script src="bootstrap.bundle.min.js"></script>
+    <script src="jquery.min.js"></script>
+    <script src="aliyun-oss-sdk.min.js"></script>
+    <script src="jspdf.umd.min.js"></script>
+    <script src="crypto-js.js"></script>
+<script src="key-store.js"></script>
+<!-- 本地密钥，不入库：复制 config.local.example.js 为 config.local.js 后填写 -->
+<script src="config.local.js"></script>
+    <!-- pdf.js 本地化：不再依赖 CDN，file:// 打开也能用 -->
+    <script src="pdf.min.js"></script>
+    <!-- 以普通脚本方式加载 worker：pdf.js 会认 globalThis.pdfjsWorker 走"假 worker"，
+         这样 file:// 下不能被 new Worker 的限制也绕开了 -->
+    <script src="pdf.worker.min.js"></script>
+    <script>if (window.pdfjsLib) { window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdf.worker.min.js'; }</script>
+    <script src="pdf-templates.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+    <link rel="stylesheet" type="text/css" href="sweetalert.css">
+    <script type="text/javascript" src="sweetalert-dev.js"></script>
+<style>
+        /* 正常版 / 调试版的唯一开关：html.dbg-on 时显示 .dbg 元素 */
+        html:not(.dbg-on) .dbg { display: none !important; }
+    </style>
+    <script>
+        /* 版本开关：index.html = 正常版；index.html?debug=1 = 调试版（会记住）；?debug=0 关掉。 */
+        (function () {
+            try {
+                var s = location.search || '';
+                if (/[?&]debug=1(?:&|$)/.test(s)) localStorage.setItem('zyDebug', '1');
+                if (/[?&]debug=0(?:&|$)/.test(s)) localStorage.removeItem('zyDebug');
+                if (localStorage.getItem('zyDebug') === '1') {
+                    document.documentElement.className =
+                        (document.documentElement.className + ' dbg-on').trim();
+                }
+            } catch (e) { }
+        })();
+    </script>
+</head>
+
+<body>
+    <script>
+var _hmt = _hmt || [];
+(function() {
+  var hm = document.createElement("script");
+  hm.src = "https://hm.baidu.com/hm.js?bff64ab64cafdee808e9f3fb6aaab90b";
+  var s = document.getElementsByTagName("script")[0]; 
+  s.parentNode.insertBefore(hm, s);
+})();
+</script>
+
+    <div class="alert alert-dismissible alert-light" id="announcement_block">
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        <div id="announcement">
+            <strong>公告</strong> This <a href="https://<web-host>/index.html#" class="alert-link">alert needs
+                your attention</a>, but it's
+            not super
+            important.
+        </div>
+    </div>
+    <script>
+        $("#announcement_block").hide();
+    </script>
+    <div class="ball">
+        <p id="ball_T">请稍候</p>
+        <div class="ball1"></div>
+        <div class="ball2"></div>
+        <div class="ball3"></div>
+    </div>
+
+    <style>
+        /*css document*/
+        * {
+            /*清除页面中默认的内外边距*/
+            padding: 0;
+            margin: 0;
+        }
+
+        .ball {
+            width: 240px;
+            height: 120px;
+            text-align: center;
+            color: #fff;
+            background: rgba(0, 0, 0, 0.5);
+
+            position: fixed;
+            /* 固定在屏幕上 */
+            top: 50vh;
+            /* 顶部 50% */
+            left: 50%;
+            /* 左侧 50% */
+            transform: translate(-50%, -50%);
+            /* 精确居中 */
+
+            z-index: 999;
+            /* 保证在最上层 */
+        }
+
+
+        .ball>p {
+            /*设置加载的提示文字的样式*/
+            padding: 20px 0;
+        }
+
+        .ball>div {
+            /*设置动画中三个小球的样式*/
+            width: 18px;
+            /*设置大小*/
+            height: 18px;
+            background: #1abc9c;
+            /*设置背景颜色*/
+            border-radius: 100%;
+            /*设置圆角边框*/
+            display: inline-block;
+            /*设置其显示方式*/
+            animation: move 1.4s infinite ease-in-out both;
+            /*添加动画*/
+        }
+
+        .ball .ball1 {
+            /*设置第一个小球的动画延迟*/
+            animation-delay: 0.16s;
+        }
+
+        .ball .ball2 {
+            /*设置第二个小球的动画延迟*/
+            animation-delay: 0.32s;
+        }
+
+        .ball .ball3 {
+            /*设置第二个小球的动画延迟*/
+            animation-delay: 0.48s;
+        }
+
+
+        @keyframes move {
+
+            /*创建动画*/
+            0% {
+                transform: scale(0)
+            }
+
+            40% {
+                transform: scale(1.0)
+            }
+
+            100% {
+                transform: scale(0)
+            }
+        }
+
+
+        #lesson {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            margin: auto;
+
+            z-index: 999;
+        }
+
+        .milky {
+            font-size: 20px;
+            /*设置文字大小*/
+            color: rgba(51, 203, 34, 0.59);
+            /*设置文字颜色*/
+            text-shadow: 0 8px 10px rgba(102, 255, 156, 0.24);
+            /*设置文字阴影*/
+            font-weight: bolder;
+            /*设置文字宽度*/
+        }
+
+        .navbar .container-fluid {
+            justify-content: flex-start;
+        }
+
+        .chapter-item {
+            padding: 5px 10px;
+            border-radius: 5px;
+            user-select: none;
+        }
+
+        .chapter-item.selected {
+            background-color: #e0f7fa;
+        }
+
+        .chapter-item .title {
+            display: inline-block;
+        }
+
+        .chapter-children {
+            margin-left: 15px;
+            display: none;
+            /* 默认折叠 */
+        }
+
+        .folder .triangle {
+            display: inline-block;
+            width: 1em;
+            transition: transform 0.2s;
+        }
+
+        .folder.expanded>.triangle {
+            transform: rotate(90deg);
+            /* 展开时旋转三角 */
+        }
+    </style>
+    <script>
+        $(".ball").fadeOut(5);
+    </script>
+    <div id="bg"
+        style="z-index:-1;filter:brightness(60%);position:fixed;top:0;left:0;width:100%;height:100%;background: center url(bg3.jpg);background-size:cover">
+    </div>
+    <nav class="navbar navbar-dark bg-primary">
+        <div class="container-fluid d-flex align-items-center">
+
+            <!-- 标题紧跟在按钮右边 -->
+            <a class="navbar-brand" href="#">中育ToolBox</a>
+        </div>
+    </nav>
+    <nav class="navbar navbar-dark bg-primary fixed-top">
+        <div class="container-fluid d-flex align-items-center">
+            <!-- 汉堡按钮 -->
+            <button class="navbar-toggler me-2" type="button" data-bs-toggle="offcanvas" data-bs-target="#sidebarMenu"
+                aria-controls="sidebarMenu">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+
+            <!-- 标题紧跟在按钮右边 -->
+            <a class="navbar-brand" href="#">中育ToolBox</a>
+        </div>
+    </nav>
+
+
+    <div class="offcanvas offcanvas-start" tabindex="-1" id="sidebarMenu" aria-labelledby="sidebarMenuLabel"
+        data-bs-backdrop="true" data-bs-scroll="false">
+        <div class="offcanvas-header">
+            <h5 class="offcanvas-title" id="sidebarMenuLabel">功能菜单</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+        </div>
+        <div class="offcanvas-body p-0">
+            <ul class="nav nav-pills flex-column">
+                <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#Donate" style="color:#7c3aed">支持原作者</a></li>
+                <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#Login" id="T_login">登录</a>
+                </li>
+                <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#picture"
+                        onclick="loadPictures()">图库</a></li>
+                <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#NoteDir"
+                        onclick="loadNotes(0)">云笔记</a></li>
+                <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#exam"
+                        onclick="fetchExams()">新测评</a></li>
+                <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#ZXZL"
+                        onclick="zxzl_set_url()">在线专栏</a></li>
+                <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#CK" onclick="ck_set_url()">选课</a>
+                </li>
+                <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#Mistake"
+                        onclick="mistakeInit()">错题本</a></li>
+                <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#question"
+                        onclick="quoraInit()">随身答</a></li>
+
+                <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#linspirer" onclick="linspirerInit()">领创</a></li>
+                <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#apps">下载应用</a></li>
+                <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#lesson2" onclick="show_lesson()"
+                        id="lesson-tab">优客畅学</a></li>
+                <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#advance"
+                        onclick="reload_token()">高级选项</a></li>
+                <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#dev" onclick="loadRoot()">开发工具</a>
+                </li>
+                <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#Update"
+                        onclick="loadChangelog()">说明&致谢</a></li>
+            </ul>
+        </div>
+    </div>
+    <div id="myTabContent" class="tab-content">
+
+        <div class="tab-pane fade active show" id="Login">
+            <div class="container">
+                <div class="row mt-5">
+                    <div id="loginc"
+                        class="login col-12 col-sm-8 offset-sm-2 col-md-6 offset-md-3 col-lg-6 offset-lg-3 col-xl-4 offset-xl-4">
+                        <div class="card card-primary">
+                            <div class="card-header">
+                                <h4>用户中心</h4>
+                            </div>
+                            <form class="needs-validation" novalidate="">
+                                <div class="card-body">
+                                    <h1 id="welc"></h1>
+                                    <div class="form-group mb-3">
+                                        <label for="school_select">学校</label>
+                                        <select id="school_select" class="form-select" onchange="onSchoolChange()">
+                                            <option value="sxz">省锡中</option>
+                                            <option value="other">其它学校</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-group mb-3" id="school_code_group" style="display:none;">
+                                        <label for="school_code">学校代码</label>
+                                        <input id="school_code" type="text" class="form-control" placeholder="输入学校代码">
+                                    </div>
+                                    <div class="form-group mb-3">
+                                        <label for="account">用户名</label>
+                                        <input id="account" type="text" class="form-control" autofocus=""
+                                            placeholder="输入用户名">
+                                        <div class="invalid-feedback"></div>
+                                    </div>
+                                    <div class="form-group mb-5">
+                                        <label for="password" class="control-label">密码</label>
+                                        <input id="password" type="password" class="form-control" placeholder="输入密码">
+                                        <div class="invalid-feedback"></div>
+                                    </div>
+                                    <div class="login-bottom form-group mb-3">
+                                        <button id="login_btn" type="button" class="btn btn-primary form-control">登录
+                                        </button>
+                                        <div class="invalid-feedback"></div>
+                                    </div>
+                                </div>
+                            </form>
+                            <div class="container">
+                                <h4>说明：</h4>
+                                <p>
+                                    本工具用于快捷查看中育账号资源，与中育智慧（无锡）数字技术有限公司及其关联公司无关
+                                    <br>
+                                    开发：
+                                    Loshop
+
+
+                                    <br>
+                                    如遇问题请及时联系，QQ群：1067807011
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="logoutc"
+                        class="login col-12 col-sm-8 offset-sm-2 col-md-6 offset-md-3 col-lg-6 offset-lg-3 col-xl-4 offset-xl-4">
+                        <div class="card card-primary">
+                            <div class="card-header">
+                                <h4>用户中心</h4>
+                            </div>
+                            <form class="needs-validation" novalidate="">
+                                <div class="card-body">
+                                    <h1 id="welc2"></h1>
+                                    <div class="login-bottom form-group mb-3">
+                                        <button id="logout_btn" type="button"
+                                            class="btn btn-outline-primary form-control" onclick="logout()">注销
+                                        </button>
+                                        <div class="invalid-feedback"></div>
+                                    </div>
+                                </div>
+                            </form>
+                            <div class="container">
+                                <h4>说明：</h4>
+                                <p>
+                                    本工具用于快捷查看中育账号资源，与中育智慧（无锡）数字技术有限公司及其关联公司无关
+                                    <br>
+                                    开发：
+                                    Loshop
+
+
+                                    <br>
+                                    如遇问题请及时联系，QQ群：1067807011
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- 支持作者 / 捐赠 -->
+        <div class="tab-pane fade" id="Donate">
+            <div style="min-height:100vh; background: linear-gradient(135deg, #7c3aed, #a855f7, #c084fc); padding: 60px 20px;">
+                <div class="container" style="max-width:600px;">
+                    <div class="text-center mb-4">
+                        <h1 style="color:#fff; font-weight:bold; text-shadow: 0 2px 8px rgba(0,0,0,0.2);">支持原作者</h1>
+                    </div>
+                    <div style="background:rgba(255,255,255,0.95); border-radius:16px; padding:30px; box-shadow: 0 8px 32px rgba(0,0,0,0.15);">
+                        <p style="color:#555; font-size:15px; line-height:1.8;">
+    本工具基于 <a href="https://github.com/BennyLoshop/ZhongYuToolbox" target="_blank" rel="noopener">BennyLoshop / ZhongYuToolbox</a>
+    的网页版工具箱，本仓库只是在其之上做了扩展与修复，<strong>不接受任何捐助</strong>。
+    如果你想支持这个项目，请支持原作者：<a href="https://github.com/BennyLoshop" target="_blank" rel="noopener">github.com/BennyLoshop</a>。
+</p>
+<div class="text-center">
+    <a class="btn btn-primary" style="background:linear-gradient(135deg,#7c3aed,#a855f7); border:none; font-size:16px; padding:10px 24px;"
+       href="https://github.com/BennyLoshop/ZhongYuToolbox" target="_blank" rel="noopener">前往原作者仓库</a>
+</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-pane fade" id="NoteDir">
+            <div class="container">
+                <div class="d-flex flex-column align-items-stretch flex-shrink-0 mt-5" style="width: 100%"
+                    id="noteContainer">
+                    <ul class="nav nav-tabs" id="dirTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="dir-tab" data-bs-toggle="tab" data-bs-target="#dir"
+                                type="button" role="tab" onclick="loadNotes(0)">文件夹</button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="all-tab" data-bs-toggle="tab" data-bs-target="#all"
+                                type="button" role="tab" onclick="noteGetAll()">全部笔记</button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="search-tab" data-bs-toggle="tab" data-bs-target="#search"
+                                type="button" role="tab">搜索</button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="pdf-upload-tab" data-bs-toggle="tab" data-bs-target="#pdfUpload"
+                                type="button" role="tab">PDF上传</button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="tchshare-tab" data-bs-toggle="tab" data-bs-target="#tchShare"
+                                type="button" role="tab" onclick="TchShare.home()">老师分享</button>
+                        </li>
+                    </ul>
+
+                    <!-- tab content -->
+                    <div class="tab-content mt-3">
+                        <div class="tab-pane fade show active" id="dir" role="tabpanel">
+                            <div class="d-flex justify-content-end align-items-center mt-2">
+                                <a id="dir_cloudnote" class="btn btn-outline-success btn-sm" href="javascript:void(0)"
+                                    title="在新标签页打开教务系统登录页（https://学校代码.example.com/#/login）；不再在当前页内切换云笔记路由"
+                                    onclick="return window.zxzl_openLoginPage(event, 'dir_cloudnote_msg')">
+                                    教务系统云笔记
+                                </a>
+                                <small id="dir_cloudnote_msg" class="text-success ms-2"></small>
+                            </div>
+                            <!-- 面包屑导航 -->
+                            <nav aria-label="breadcrumb" class="mt-3">
+                                <ol class="breadcrumb" id="breadcrumbNav">
+                                    <li class="breadcrumb-item active" data-id="0" style="cursor: pointer;">根目录</li>
+                                </ol>
+                            </nav>
+                            <!-- 笔记列表 -->
+                            <div id="noteList" class="list-group list-group-flush"></div>
+                        </div>
+                        <div class="tab-pane fade" id="tchShare" role="tabpanel">
+                            <div class="d-flex flex-wrap align-items-center gap-2 mt-3 mb-2">
+                                <button class="btn btn-sm btn-outline-primary" onclick="TchShare.reload()">刷新</button>
+                                <button class="btn btn-sm btn-outline-secondary dbg" onclick="TchShare.diag()">诊断</button>
+                                <button class="btn btn-sm btn-outline-info dbg" onclick="TchShare.netcheck()">网络自检</button>
+                                <button class="btn btn-sm btn-outline-secondary dbg" onclick="TchShare.forceAll()"
+                                    title="清掉已记忆的端点，把所有候选端点再试一遍">换端点重试</button>
+                                <button class="btn btn-sm btn-outline-dark dbg" onclick="TchShare.dump()"
+                                    title="把入口/目录/内容三层原始返回全部摊开">原始数据</button>
+                                <button class="btn btn-sm btn-outline-danger dbg" onclick="TchShare.scan()"
+                                    title="把 parentId=0 的所有候选参数逐条全跑一遍，报每条返回的条数与 type 分布">挖文件夹</button>
+                                <span class="text-muted small">只读浏览老师分享给你的文件（不做上传/分享）</span>
+                            </div>
+                            <nav aria-label="breadcrumb">
+                                <ol class="breadcrumb" id="tchShareCrumb">
+                                    <li class="breadcrumb-item active">老师列表</li>
+                                </ol>
+                            </nav>
+                            <div id="tchShareList" class="list-group list-group-flush"></div>
+                            <pre id="tchShareDiag" class="small text-muted mt-2 dbg"
+                                style="display:none;max-height:220px;overflow:auto;white-space:pre-wrap"></pre>
+                        </div>
+                        <div class="tab-pane fade" id="all" role="tabpanel">
+                            <div class="d-flex flex-column align-items-stretch flex-shrink-0 mt-5"
+                                style="width: 100%;background:rgba(255,255,255,0.8) !important;">
+                                <div id="noteList2" class="list-group border-bottom scrollarea"
+                                    style="background:rgba(255,255,255,0) !important;"></div>
+                                <div class="modal fade" id="downloadModal" tabindex="-1" data-bs-backdrop="static"
+                                    aria-labelledby="downloadModalLabel" aria-hidden="true">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+                                            <div class="modal-header">
+                                                <h5 class="modal-title" id="downloadModalLabel">下载笔记</h5>
+                                            </div>
+                                            <div id="download_msg" class="modal-body"
+                                                style="word-break:break-all;white-space:pre-line;">
+                                                服务器正在获取图片列表...
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tab-pane fade" id="search" role="tabpanel">
+                            <div class="d-flex flex-column align-items-stretch flex-shrink-0 mt-5"
+                                style="width: 100%; background:rgba(255,255,255,0.8) !important;">
+                                <a class="justify-content-between d-flex align-items-center flex-shrink-0 p-3 link-dark text-decoration-none border-bottom"
+                                    style="background:rgba(255,255,255,0.9) !important;">
+                                    <div><span class="fs-5 fw-semibold">搜索笔记</span></div>
+                                    <div class="input-group mb-1" style="width:50%">
+                                        <input id="note_search_input" type="text" class="form-control"
+                                            placeholder="输入笔记名称搜索" onkeydown="if(event.key==='Enter') searchNotes()">
+                                        <button class="btn btn-primary" type="button"
+                                            onclick="searchNotes()">搜索</button>
+                                    </div>
+                                </a>
+                                <div id="noteSearchList" class="list-group border-bottom scrollarea"
+                                    style="background:rgba(255,255,255,0) !important;"></div>
+                                <div id="searchPagination"></div>
+                            </div>
+                        </div>
+
+                        <!-- PDF上传子标签内容区 -->
+                        <div class="tab-pane fade" id="pdfUpload" role="tabpanel">
+                            <div class="container mt-3">
+                                <div class="card">
+                                    <div class="card-header bg-primary text-white">
+                                        <h5 class="mb-0">PDF上传云笔记</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <!-- 笔记名称输入 -->
+                                        <div class="mb-3">
+                                            <label for="pdfNoteName" class="form-label">笔记名称</label>
+                                            <input type="text" class="form-control" id="pdfNoteName" 
+                                                   placeholder="请输入笔记名称（自动填充PDF文件名）">
+                                        </div>
+
+                                        <!-- PDF文件选择 -->
+                                        <div class="mb-3">
+                                            <label for="pdfFileInput" class="form-label">选择PDF文件</label>
+                                            <input type="file" class="form-control" id="pdfFileInput" 
+                                                   accept=".pdf" onchange="handlePdfSelect(event)">
+                                            <div id="pdfFileInfo" class="mt-2"></div>
+                                        </div>
+
+                                        <!-- 进度条 -->
+                                        <div class="mb-3">
+                                            <div class="progress" style="height: 25px;">
+                                                <div id="pdfProgress" class="progress-bar progress-bar-striped progress-bar-animated" 
+                                                     role="progressbar" style="width: 0%;" 
+                                                     aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                                            </div>
+                                            <small id="pdfProgressText" class="text-muted">等待上传...</small>
+                                        </div>
+
+                                        <!-- 自动旋转：笔记画布是 2880x1800 的 16:10 横版，而 PPT 导出的 PDF
+                                             常把横版、竖版页混在一起。竖版页等比缩放后左右大片留白，
+                                             在 App 里看起来就是“只剩半页/一大片空白”。
+                                             勾选后逐页判断朝向，作为缩略图的默认值；用户可在缩略图上逐页改。
+                                             只读本次点击时的勾选状态，不写 localStorage。 -->
+                                        <div class="mb-3">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" id="pdf_autorotate" checked onchange="onPdfAutoRotateToggle()">
+                                                <label class="form-check-label" for="pdf_autorotate">
+                                                    自动判定页面朝向（只作为逐页缩略图的默认值）
+                                                </label>
+                                                <div class="form-text">
+                                                    有文字层的页面按文字角度判定；纯图片页（扫描件、贴图）判不准时保持 0°。下面的缩略图可以直接改，以缩略图为准。
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- 逐页手动旋转：自动判定只给默认值，最终以这里的缩略图为准 -->
+                                        <div class="mb-3" id="pdfRotPanel" style="display:none;">
+                                            <label class="form-label">页面方向（缩略图就是上传后的样子）</label>
+                                            <div class="mb-2" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;">
+                                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="rotateAllPdfPages(-90)">全部左转 90°</button>
+                                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="rotateAllPdfPages(90)">全部右转 90°</button>
+                                                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="resetPdfPageRotations()">恢复自动判定</button>
+                                                <span id="pdfRotStatus" class="text-muted small"></span>
+                                            </div>
+                                            <div id="pdfRotStrip" style="display:flex;gap:10px;overflow-x:auto;padding:6px 2px 10px;"></div>
+                                        </div>
+
+                                        <!-- 操作按钮 -->
+                                        <div class="mb-3">
+                                            <button class="btn btn-primary" id="btnUploadPdf" onclick="uploadPdfAsNote()">
+                                                开始上传
+                                            </button>
+                                        </div>
+
+                                        <!-- 预览区域 -->
+                                        <div class="mb-3">
+                                            <label class="form-label">预览（前5页）</label>
+                                            <div id="pdfPreviewContainer" class="border rounded p-3" 
+                                                 style="max-height: 400px; overflow-y: auto; background: #f8f9fa;">
+                                                <p class="text-muted text-center">预览将在此显示...</p>
+                                            </div>
+                                        </div>
+
+                                        <!-- 完整预览区域 -->
+                                        <div id="pdfPreviewArea"></div>
+
+                                        <!-- 使用说明 -->
+                                        <div class="alert alert-info mt-3">
+                                            <h6>使用说明：</h6>
+                                            <ul class="mb-0">
+                                                <li>选择 PDF 后会在<strong>本地渲染</strong>每一页（2880×1800 画布），同时生成逐页缩略图；服务端转换只在本地失败时兜底</li>
+                                                <li>默认<strong>自动判定朝向</strong>（有文字层按文字角度，纯图片页保持 0°）；缩略图上可用 ↺ / ↻ 逐页微调，或「全部左转 / 全部右转 / 恢复自动判定」</li>
+                                                <li>标题默认是当前时间，可改；点<strong>「开始上传」</strong>后上传为一条云笔记，每页包含模板文件、截图与整页图</li>
+                                                <li>处理过程看进度条与预览；<strong>请保持本页在前台</strong>，后台标签页会被浏览器降频，可能长时间停在 15%（60 秒后会有明确超时提示）</li>
+                                                <li>同一页面会话可连续上传多份 PDF</li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+
+
+        <div class="tab-pane fade" id="ZXZL" style="height:calc(100vh - 56px);overflow:hidden;">
+            <div class="alert alert-info small mb-2 mt-2 py-2" id="zxzl_notice">
+                <b>用法：</b>① 用学号密码点「专栏登录」→ ② 下方页面载入专栏列表（这台机器记住 token，下次免输）<br>
+                <span class="text-muted">密码只用一次、不保存；「清除专栏 token」可随时失效。老师发的文件请用左侧「老师分享」。</span>
+            </div>
+            <div class="card mb-2">
+                <div class="card-body py-2">
+                    <div class="row g-2 align-items-end">
+                        <div class="col-auto">
+                            <label class="form-label small mb-0">学校代码</label>
+                            <input id="col_school" class="form-control form-control-sm" style="width:80px" value="sxz">
+                        </div>
+                        <div class="col-auto">
+                            <label class="form-label small mb-0">用户名</label>
+                            <input id="col_user" class="form-control form-control-sm" style="width:140px" placeholder="学号 / 用户名">
+                        </div>
+                        <div class="col-auto">
+                            <label class="form-label small mb-0">密码</label>
+                            <input id="col_pwd" type="password" class="form-control form-control-sm" style="width:140px">
+                        </div>
+                        <div class="col-auto">
+                            <button id="col_login_btn" class="btn btn-primary btn-sm" onclick="ColLogin.login()">专栏登录</button>
+                        </div>
+                        <div class="col-auto">
+                            <button class="btn btn-outline-secondary btn-sm" onclick="ColLogin.logout()">清除专栏 token</button>
+                        </div>
+                        <div class="col-auto">
+                            <span id="col_login_msg" class="small text-muted"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="d-flex flex-wrap align-items-center gap-2 mb-2 dbg">
+                <button id="col_batch_btn" type="button" class="btn btn-success btn-sm">一键下载专栏</button>
+                <button id="col_batch_diag" type="button" class="btn btn-outline-secondary btn-sm" title="只取结构不下文件，用来看字段名和扫到的地址">看看能抓到什么</button>
+                <span id="col_batch_msg" class="small text-muted"></span>
+            </div>
+            <div class="d-flex justify-content-end align-items-center" style="height:40px;">
+                <a id="col_diag" class="btn btn-outline-secondary btn-sm mt-2 mb-2 me-2 dbg" title="逐个试 appWebSite/* 接口的候选参数，找出能返回数据的组合">
+                    专栏接口诊断
+                </a>
+                <a id="zxzl_newtab" class="btn btn-outline-secondary btn-sm mt-2 mb-2 me-2" href="javascript:void(0)" title="在新标签页直接打开在线专栏（navPage + 专栏 token，默认 /list 列表）" onclick="window.open(window.navSrc());return false;">在新页面打开</a>
+                <a id="zxzl_login" class="btn btn-outline-primary btn-sm mt-2 mb-2 me-3" href="javascript:void(0)" onclick="return window.zxzl_openLoginPage(event)" title="在新标签页打开教务系统登录页（https://学校代码.example.com/#/login），不再预热 cookie、不再跳云笔记路由">云笔记·新窗口</a>
+            </div>
+            <iframe id="zxzl_iframe"
+                src="about:blank"
+                style="width:100%;height:300px;border:none;display:block;"></iframe>
+            <pre id="col_batch_out" class="dbg" style="display:none;position:fixed;left:12px;bottom:12px;max-width:52vw;max-height:60vh;overflow:auto;background:#0b3b33;color:#d7f5ec;font-size:12px;line-height:1.5;padding:12px;border-radius:8px;z-index:9999;white-space:pre-wrap;box-shadow:0 8px 28px rgba(0,0,0,.35);"></pre>
+            <pre id="col_diag_out" class="dbg" style="display:none;position:fixed;right:12px;bottom:12px;max-width:48vw;max-height:62vh;overflow:auto;background:#0b3b33;color:#d7f5ec;font-size:12px;line-height:1.5;padding:12px;border-radius:8px;z-index:9999;white-space:pre-wrap;box-shadow:0 8px 28px rgba(0,0,0,.35);"></pre>
+        </div>
+
+        <div class="tab-pane fade" id="CK" style="height:calc(100vh - 56px);overflow:hidden;">
+            <div class="d-flex justify-content-end align-items-center" style="height:40px;">
+                <a id="ck_login" class="btn btn-outline-primary btn-sm mt-2 mb-2 me-3">
+                    在新页面打开
+                </a>
+            </div>
+            <iframe id="ck_iframe"
+                src="http://<relay-host>/navPage.html%3FapiHost=https:%252F%252F<relay-host>&amp;apiToken=.html"
+                style="width:100%;height:calc(100% - 40px);border:none;display:block;"></iframe>
+        </div>
+        <div class="tab-pane fade" id="Mistake">
+            <div class="container mt-5">
+                <div class="input-group mb-3">
+                    <label class="input-group-text" for="inputGroupSelect01">学科</label>
+                    <select id="mistake_subject" class="form-select" onchange="mistake_query()">
+                        <option value="-1">请选择</option>
+                    </select>
+                </div>
+                <table class="table table-hover" style="background:rgba(255,255,255,0.8) !important;">
+                    <thead>
+                        <tr>
+                            <th scope="col" class="text-secondary">#</th>
+                            <th scope="col" class="text-secondary">题目名称</th>
+                            <th scope="col" class="text-secondary">快照</th>
+                            <th scope="col" class="text-secondary">更新时间</th>
+                        </tr>
+                    </thead>
+                    <tbody id="mistake_list">
+                    </tbody>
+                </table>
+            </div>
+
+
+        </div>
+        <div class="tab-pane fade" id="question">
+            <div class="container mt-5">
+                <div class="input-group mb-2">
+                    <input id="ques_search" type="text" class="form-control" placeholder="搜索关键词" onkeydown="if(event.key==='Enter') ques_query()">
+                    <button class="btn btn-primary" type="button" onclick="ques_query()">搜索</button>
+                </div>
+                <div class="d-flex flex-wrap gap-1 mb-3" id="ques_topic"></div>
+                <details class="mb-3 adv-filter" style="border:1px solid #dee2e6; border-radius:10px; background:rgba(255,255,255,0.92); overflow:hidden;">
+                    <summary style="cursor:pointer; padding:10px 16px; background:linear-gradient(135deg,#f8f9fa,#e9ecef); font-weight:600; color:#495057; user-select:none; list-style:none; display:flex; align-items:center; gap:8px;">
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" style="transition:transform 0.2s; flex-shrink:0;"><path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 01.708 0L8 10.293l5.646-5.647a.5.5 0 01.708.708l-6 6a.5.5 0 01-.708 0l-6-6a.5.5 0 010-.708z"/></svg>
+                        高级筛选
+                    </summary>
+                    <div style="padding:16px 16px 12px;">
+                        <div class="row g-2">
+                            <div class="col-md-4">
+                                <label class="form-label fw-semibold small text-secondary mb-1" for="ques_subject">学科</label>
+                                <select id="ques_subject" class="form-select form-select-sm" onchange="ques_query()">
+                                    <option value="0">全部</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="row g-2 mt-2">
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold small text-secondary mb-1">发布时间</label>
+                                <div class="input-group input-group-sm">
+                                    <input id="ques_update_start" type="date" class="form-control" onchange="ques_query()">
+                                    <span class="input-group-text">至</span>
+                                    <input id="ques_update_end" type="date" class="form-control" onchange="ques_query()">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold small text-secondary mb-1">更新时间</label>
+                                <div class="input-group input-group-sm">
+                                    <input id="ques_join_start" type="date" class="form-control" onchange="ques_query()">
+                                    <span class="input-group-text">至</span>
+                                    <input id="ques_join_end" type="date" class="form-control" onchange="ques_query()">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <label class="form-label fw-semibold small text-secondary mb-1">范围</label>
+                            <div class="d-flex flex-wrap gap-1">
+                                <input type="checkbox" class="btn-check" id="ques_watch_0" value="0" onchange="quesWatchToggle(this,0)" checked autocomplete="off">
+                                <label class="btn btn-sm btn-outline-primary" for="ques_watch_0">不限</label>
+                                <input type="checkbox" class="btn-check" id="ques_watch_1" value="1" onchange="quesWatchToggle(this,1)" autocomplete="off">
+                                <label class="btn btn-sm btn-outline-secondary" for="ques_watch_1">我问的</label>
+                                <input type="checkbox" class="btn-check" id="ques_watch_2" value="2" onchange="quesWatchToggle(this,2)" autocomplete="off">
+                                <label class="btn btn-sm btn-outline-secondary" for="ques_watch_2">回复的</label>
+                                <input type="checkbox" class="btn-check" id="ques_watch_3" value="3" onchange="quesWatchToggle(this,3)" autocomplete="off">
+                                <label class="btn btn-sm btn-outline-secondary" for="ques_watch_3">未回复</label>
+                                <input type="checkbox" class="btn-check" id="ques_watch_4" value="4" onchange="quesWatchToggle(this,4)" autocomplete="off">
+                                <label class="btn btn-sm btn-outline-secondary" for="ques_watch_4">未查看</label>
+                            </div>
+                        </div>
+                    </div>
+                </details>
+                <div id="ques_list" class="row gy-3"></div>
+
+
+                <input id="ques_preview" type="button" class="d-none btn btn-primary" data-bs-toggle="modal"
+                    data-bs-target="#preview">
+                <div class="modal fade" id="preview" tabindex="-1" aria-labelledby="previewModalLabel"
+                    aria-hidden="true">
+                    <div class="modal-dialog modal-fullscreen-md-down modal-xl modal-dialog-centered">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="previewModalLabel">问题详情</h5>
+                                <input type="button" class="btn-close" data-bs-dismiss="modal"
+                                    aria-label="Close"></button>
+                            </div>
+                            <div id="ques_preview_body" class="modal-body">
+
+                            </div>
+                            <div class="modal-footer justify-content-between">
+                                <input id="ques_download" type="button" class="btn btn-secondary" style="float:left"
+                                    value="下载">
+                                <div>
+                                    <input type="button" class="btn btn-primary" value="回复" onclick="openBoardModal()">
+                                    <input type="button" class="btn btn-secondary" data-bs-dismiss="modal" value="关闭">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- 画板回复 Modal -->
+        <div class="modal fade" id="boardModal" tabindex="-1" aria-labelledby="boardModalLabel" aria-hidden="true" data-bs-backdrop="static">
+            <div class="modal-dialog modal-fullscreen">
+                <div class="modal-content">
+                    <div class="modal-header py-2 px-3" style="background:#212529; border-bottom:1px solid #495057;">
+                        <h5 class="modal-title text-light" id="boardModalLabel">画板回复</h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="关闭"></button>
+                    </div>
+                    <div class="modal-body p-0 d-flex flex-column" style="height:calc(100vh - 56px); background:#f8f9fa;">
+                        <!-- 画板工具栏 -->
+                        <nav class="navbar navbar-light bg-white border-bottom border-secondary py-1 px-2 flex-shrink-0">
+                            <div class="d-flex align-items-center gap-1 flex-wrap w-100">
+                                <div class="btn-group btn-group-sm me-1">
+                                    <button class="btn btn-outline-dark active" id="btnSelect" title="选择/移动 (V)">选择</button>
+                                    <button class="btn btn-outline-dark" id="btnDraw" title="画笔 (P)">画笔</button>
+                                    <button class="btn btn-outline-dark" id="btnText" title="文字 (T)">文字</button>
+                                    <button class="btn btn-outline-dark" id="btnImage" title="插入图片">图片</button>
+                                </div>
+                                <div class="vr bg-secondary"></div>
+                                <div class="d-flex align-items-center gap-1 me-1" id="colorSwatches">
+                                    <span class="color-swatch active" data-color="#000000" style="background:#000000" title="黑色"></span>
+                                    <span class="color-swatch" data-color="#FFFFFF" style="background:#FFFFFF" title="白色"></span>
+                                    <span class="color-swatch" data-color="#FF0000" style="background:#FF0000" title="红色"></span>
+                                    <span class="color-swatch" data-color="#0000FF" style="background:#0000FF" title="蓝色"></span>
+                                    <span class="color-swatch" data-color="#00AA00" style="background:#00AA00" title="绿色"></span>
+                                    <span class="color-swatch" data-color="#FFFF00" style="background:#FFFF00" title="黄色"></span>
+                                    <span class="color-swatch" data-color="#FF8800" style="background:#FF8800" title="橙色"></span>
+                                    <span class="color-swatch" data-color="#8800CC" style="background:#8800CC" title="紫色"></span>
+                                    <span class="color-swatch" data-color="#888888" style="background:#888888" title="灰色"></span>
+                                    <span class="color-swatch" data-color="#FF69B4" style="background:#FF69B4" title="粉色"></span>
+                                </div>
+                                <div class="vr bg-secondary"></div>
+                                <div class="btn-group btn-group-sm me-1" id="widthPresets">
+                                    <button class="btn btn-outline-dark btn-sm-w active" data-width="3" title="细">细</button>
+                                    <button class="btn btn-outline-dark btn-sm-w" data-width="8" title="中">中</button>
+                                    <button class="btn btn-outline-dark btn-sm-w" data-width="18" title="粗">粗</button>
+                                </div>
+                                <div class="vr bg-secondary"></div>
+                                <div class="d-flex align-items-center gap-1 me-1" id="bgSwatches">
+                                    <span class="text-dark small me-1">背景</span>
+                                    <span class="bg-swatch active" data-bg="#FFFFFF" style="background:#FFFFFF" title="白色"></span>
+                                    <span class="bg-swatch" data-bg="#1a1a1a" style="background:#1a1a1a" title="黑色"></span>
+                                    <span class="bg-swatch" data-bg="#1B3A1B" style="background:#1B3A1B" title="墨绿"></span>
+                                    <span class="bg-swatch" data-bg="#0D1B3E" style="background:#0D1B3E" title="墨蓝"></span>
+                                </div>
+                                <div class="vr bg-secondary"></div>
+                                <div class="btn-group btn-group-sm me-1">
+                                    <button class="btn btn-outline-dark" id="btnUndo" title="撤销 (Ctrl+Z)">撤销</button>
+                                    <button class="btn btn-outline-dark" id="btnRedo" title="重做 (Ctrl+Y)">重做</button>
+                                    <button class="btn btn-outline-dark" id="btnDelete" title="删除选中 (Del)">删除</button>
+                                    <button class="btn btn-outline-dark" id="btnClear" title="清空画板">清空</button>
+                                    <button class="btn btn-outline-dark d-none" id="btnCrop" title="裁剪选中图片">裁剪</button>
+                                    <button class="btn btn-outline-dark d-none" id="btnCropConfirm" title="确认裁剪">✓确认</button>
+                                    <button class="btn btn-outline-dark d-none" id="btnCropCancel" title="取消裁剪">✗取消</button>
+                                </div>
+                                <div class="vr bg-secondary"></div>
+                                <div class="d-flex align-items-center gap-1 ms-auto">
+                                    <span class="text-dark small">SessionID</span>
+                                    <input type="text" class="form-control form-control-sm bg-white text-dark border-secondary" id="boardSessionId" style="width:100px;" placeholder="1061955" readonly>
+                                    <button class="btn btn-success btn-sm" id="btnExport" title="发送到随身答">发送</button>
+                                </div>
+                            </div>
+                        </nav>
+                        <!-- 画布区域 -->
+                        <div class="flex-fill d-flex align-items-center justify-content-center overflow-auto p-3" id="canvasWrap" style="background:#fff;">
+                            <div id="canvasInner">
+                                <canvas id="boardCanvas"></canvas>
+                            </div>
+                        </div>
+                        <!-- 缩放 -->
+                        <div class="position-fixed bottom-0 end-0 m-3" style="z-index:1056;">
+                            <div class="btn-group btn-group-sm">
+                                <button class="btn btn-dark" id="zoomOut">-</button>
+                                <button class="btn btn-dark disabled" id="zoomLabel" style="min-width:3.5em;">100%</button>
+                                <button class="btn btn-dark" id="zoomIn">+</button>
+                                <button class="btn btn-secondary" id="zoomFit">适应</button>
+                            </div>
+                        </div>
+                    </div>
+                    <input type="file" accept="image/*" id="imgInput" class="d-none">
+                </div>
+            </div>
+        </div>
+        <!-- ==================== 领创 (Linspirer) Tab ==================== -->
+        <div class="tab-pane fade" id="linspirer">
+            <div class="container mt-5">
+                <div class="list-group mt-3" style="background:rgba(255,255,255,0.8)">
+                    <div class="container mb-3">
+                        <br />
+                        <h1 class="text-primary">领创工具</h1>
+                        <p class="text-muted" id="linspirer_welcome" style="display:none;"></p>
+
+                        <!-- 子标签切换 -->
+                        <ul class="nav nav-tabs mt-3" id="linspirerTabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="linspirer-apps-tab" data-bs-toggle="tab" data-bs-target="#linspirerApps" type="button" role="tab">应用管理</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="linspirer-pwd-tab" data-bs-toggle="tab" data-bs-target="#linspirerPwd" type="button" role="tab">密码计算器</button>
+                            </li>
+                        </ul>
+
+                        <div class="tab-content mt-3">
+                            <!-- 应用管理子标签 -->
+                            <div class="tab-pane fade show active" id="linspirerApps" role="tabpanel">
+                                <!-- 登录表单 -->
+                                <div class="card mb-3">
+                                    <div class="card-header bg-primary text-white">
+                                        <h5 class="mb-0">设备绑定</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="row g-2">
+                                            <div class="col-md-4">
+                                                <label class="form-label">设备号 (swdid)</label>
+                                                <input type="text" class="form-control" id="linspirer_swdid" placeholder="输入设备号">
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label class="form-label">用户名</label>
+                                                <input type="text" class="form-control" id="linspirer_account" placeholder="自动填充中育用户名">
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label class="form-label">设备型号</label>
+                                                <input type="text" class="form-control" id="linspirer_model" placeholder="如 BTKZ-W00">
+                                            </div>
+                                        </div>
+                                        <div class="mt-3 d-flex align-items-center gap-2">
+                                            <button class="btn btn-primary" id="linspirerLoginBtn" onclick="linspirerLogin()">登录并获取应用</button>
+                                            <span id="linspirerStatus"></span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 应用列表 -->
+                                <div id="linspirerResultArea" style="display:none;">
+                                    <h4 class="mb-3">应用列表</h4>
+                                    <div id="linspirerAppList"></div>
+                                </div>
+                            </div>
+
+                            <!-- 密码计算器子标签 -->
+                            <div class="tab-pane fade" id="linspirerPwd" role="tabpanel">
+                                <div class="card mb-3">
+                                    <div class="card-header bg-success text-white">
+                                        <h5 class="mb-0">管理员密码计算器</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <p class="text-muted small">每天动态变化的管理员密码，基于设备号+日期+学生ID的MD5计算</p>
+                                        <div class="row g-2 mb-3">
+                                            <div class="col-md-4">
+                                                <label class="form-label">设备号</label>
+                                                <input type="text" class="form-control" id="linspirer_pwd_swdid" placeholder="留空则使用已绑定的设备号">
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label class="form-label">用户名（可选）</label>
+                                                <input type="text" class="form-control" id="linspirer_pwd_account" placeholder="需要联网获取学生ID">
+                                            </div>
+                                            <div class="col-md-4">
+                                                <label class="form-label">设备型号（可选）</label>
+                                                <input type="text" class="form-control" id="linspirer_pwd_model" placeholder="如 BTKZ-W00">
+                                            </div>
+                                        </div>
+                                        <div class="d-flex gap-2">
+                                            <button class="btn btn-success" id="linspirerPwdBtn" onclick="linspirerCalcPwd()">计算密码</button>
+                                            <button class="btn btn-outline-success" onclick="linspirerQuickCalcPwd()">快捷计算（使用已登录信息）</button>
+                                        </div>
+                                        <div id="linspirerPwdResult" class="mt-3"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 领创应用详情 Modal -->
+        <div class="modal fade" id="linspirerDetailModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">应用详情</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+                    </div>
+                    <div class="modal-body" id="linspirerDetailBody"></div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-pane fade" id="apps">
+            <div class="container mt-5">
+
+                <div class="list-group mt-3 " style="background:rgba(255,255,255,0.8)">
+                    <div class="alert alert-dismissible alert-warning">
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        <h4 class="alert-heading">警告</h4>
+                        <p class="mb-0">未经授权在其他设备登录您的账号可能会导致账号被封禁</p>
+                    </div>
+                    <div class="container mt-3 mb-3">
+                        <h1 class="text-primary">中育APP下载</h1><span
+                            class="badge bg-danger">本页面仅提供App下载，不保证其可以在设备上运行</span>
+                        <div class="container mt-3">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">平板应用</th>
+                                        <th scope="col"></th>
+                                        <th scope="col"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr class="table-primary">
+                                        <th scope="row">云笔记</th>
+                                        <td></td>
+                                        <td>
+                                            <div style="float:right">
+                                                <button type="button" class="btn btn-success"
+                                                    onclick="download_note()">下载
+                                                </button>
+                                                <button type="button" class="btn btn-info"
+                                                    onclick="reload_note_link()">刷新
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <tr class="table-primary">
+                                        <th scope="row">新测评</th>
+                                        <td></td>
+                                        <td>
+                                            <div style="float:right">
+                                                <button type="button" class="btn btn-success"
+                                                    onclick="download_test()">下载
+                                                </button>
+                                                <button type="button" class="btn btn-info"
+                                                    onclick="reload_test_link()">刷新
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <tr class="table-primary">
+                                        <th scope="row">优客畅学</th>
+                                        <td></td>
+                                        <td>
+                                            <div style="float:right">
+                                                <button type="button" class="btn btn-success"
+                                                    onclick="download_learn()">下载
+                                                </button>
+                                                <button type="button" class="btn btn-info"
+                                                    onclick="reload_learn_link()">刷新
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <tr class="table-primary">
+                                        <th scope="row">用户中心</th>
+                                        <td></td>
+                                        <td>
+                                            <div style="float:right">
+                                                <button type="button" class="btn btn-success"
+                                                    onclick="download_user()">下载
+                                                </button>
+                                                <button type="button" class="btn btn-info"
+                                                    onclick="reload_user_link()">刷新
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <tr class="table-primary">
+                                        <th scope="row">错题本</th>
+                                        <td></td>
+                                        <td>
+                                            <div style="float:right">
+                                                <button type="button" class="btn btn-success"
+                                                    onclick="download_mistake()">
+                                                    下载
+                                                </button>
+                                                <button type="button" class="btn btn-info"
+                                                    onclick="reload_mistake_link()">
+                                                    刷新
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <tr class="table-primary">
+                                        <th scope="row">在线专栏</th>
+                                        <td></td>
+                                        <td>
+                                            <div style="float:right">
+                                                <button type="button" class="btn btn-success"
+                                                    onclick="download_web()">下载
+                                                </button>
+                                                <button type="button" class="btn btn-info"
+                                                    onclick="reload_web_link()">刷新
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <tr class="table-primary">
+                                        <th scope="row">随身答</th>
+                                        <td></td>
+                                        <td>
+                                            <div style="float:right">
+                                                <button type="button" class="btn btn-success"
+                                                    onclick="download_chat()">下载
+                                                </button>
+                                                <button type="button" class="btn btn-info"
+                                                    onclick="reload_chat_link()">刷新
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <tr class="table-primary">
+                                        <th scope="row">中育教师端</th>
+                                        <td></td>
+                                        <td>
+                                            <div style="float:right">
+                                                <a type="button" class="btn btn-success"
+                                                    href="http://sxz.school.example.com/navPage.html?apiHost=http%3A%2F%2F<api-host>&schoolCode=sxz#/downloadPage">下载
+                                                </a>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th scope="col">PC应用</th>
+                                        <th scope="col"></th>
+                                        <th scope="col"></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr class="table-primary">
+                                        <th scope="row">中育课堂助手</th>
+                                        <td></td>
+                                        <td>
+                                            <div style="float:right">
+                                                <a type="button" class="btn btn-success" disabled>下载
+                                                </a>
+                                                <a type="button" class="btn btn-info" disabled>关于
+                                                </a>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="container mb-3">
+                        <h1 class="text-primary">注意</h1>
+                        <div class="container mt-3">
+                            如果无法下载(apk)文件，请点击“刷新”按钮
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="tab-pane fade" id="advance">
+            <div class="container mt-5">
+                <div class="list-group mt-3 " style="background:rgba(255,255,255,0.8)">
+
+                    <div class="alert alert-dismissible alert-danger">
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        <strong>警告 </strong> 本页面为高级选项，不当使用造成的损失概不负责
+                    </div>
+
+                    <div class="container mb-3">
+                        <p></p>
+                        <h1 class="text-primary">高级选项</h1>
+                        <div>
+                            <label class="form-label mt-4">账号Token</label>
+                            <div>
+
+                                <div class="input-group mb-3">
+                                    <input type="text" class="form-control" placeholder="Token..." value=""
+                                        aria-label="Recipient's username" aria-describedby="button-addon2" readonly=""
+                                        id="show_token">
+                                    <button class="btn btn-primary" type="button" id="button-addon2"
+                                        onclick="reload_token()">刷新Token
+                                    </button>
+                                    <button class="btn btn-secondary" type="button" id="button-addon2"
+                                        onclick="copy_token()">复制
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="d-grid gap-2">
+                            <button class="btn btn-lg btn-primary" type="button" onclick="show_class_table()">查看课表
+                            </button>
+                            <button class="btn btn-lg btn-primary" type="button" onclick="show_online_test()">网阅联考
+                            </button>
+                        </div>
+                        <fieldset>
+                            <legend class="mt-4">开发者选项</legend>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="flexSwitchCheckDefault">
+                                <label class="form-check-label" for="flexSwitchCheckDefault">启用iframe预览</label>
+                            </div>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="flexSwitchCheckChecked" disabled
+                                    checked>
+                                <label class="form-check-label" for="flexSwitchCheckChecked">启用优客畅学</label>
+                            </div>
+                        </fieldset>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="tab-pane fade" id="exam">
+            <div class="container py-3">
+                <div id="examList" class="list-group mb-3"></div>
+                <div id="examPagination" class="d-flex align-items-center justify-content-center gap-2"></div>
+            </div>
+
+            <!-- 作业题目 Modal -->
+            <div class="modal fade" id="examModal" tabindex="-1" aria-labelledby="examModalLabel" aria-hidden="true">
+                <div class="modal-dialog modal-xl modal-dialog-scrollable">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="examModalLabel"></h5>
+                            <div class="d-flex align-items-center">
+                                <span id="examShareBtn" style="cursor:pointer;font-size:1.2rem;opacity:0.6;margin-right:8px;display:none;" title="分享" onclick="(function(){var s=window._currentShare;if(s)openShareModal(s.type,s.id,s.title);})()">📤</span>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                            </div>
+                        </div>
+                        <div class="modal-body" id="examModalBody">
+                            <div class="text-center py-3 text-muted">
+                                <div class="spinner-border text-primary" role="status"></div>
+                                <div class="mt-2">加载中...</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 考试概览 Modal -->
+            <div class="modal fade" id="examOverviewModal" tabindex="-1" aria-labelledby="examOverviewLabel" aria-hidden="true">
+                <div class="modal-dialog modal-xl modal-dialog-scrollable">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="examOverviewLabel"></h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body" id="examOverviewBody">
+                            <div class="text-center py-3 text-muted">加载中...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 题目分析 Modal -->
+            <div class="modal fade" id="examAnalysisModal" tabindex="-1" aria-labelledby="examAnalysisLabel" aria-hidden="true">
+                <div class="modal-dialog modal-xl modal-dialog-scrollable">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title" id="examAnalysisLabel"></h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body" id="examAnalysisBody">
+                            <div class="text-center py-3 text-muted">加载中...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="tab-pane fade" id="dev">
+            <div class="container mt-5">
+                <div class="list-group mt-3" style="background:rgba(255,255,255,0.8)">
+                    <div class="container mb-3">
+
+                        <br />
+                        <h1 class="text-primary">开发工具</h1>
+                        <p>仅供开发使用</p>
+                    </div>
+                </div>
+                <div class="list-group mt-3" style="background:rgba(255,255,255,0.8)">
+                    <div class="container mb-3">
+                        <br />
+                        <h2 class="text-primary">上传文件到中育OSS</h2>
+
+                        <!-- 上传路径和类型在同一行 -->
+                        <div class="mb-3">
+                            <label>上传路径:</label>
+                            <div class="input-group">
+                                <!-- URL前缀起始部分（通过 API 获取） -->
+                                <span class="input-group-text" id="ossPrefix">加载中...</span>
+
+                                <!-- 上传类型选择替代原来 note_v2 -->
+                                <select id="selectFc" class="form-select" style="max-width: 150px;">
+                                    <option value="note_v2">note_v2</option>
+                                    <option value="eval_v2">eval_v2</option>
+                                    <option value="quora_v2">quora_v2</option>
+                                    <option value="mistake_v2">mistake_v2</option>
+                                    <option value="study_v2">study_v2</option>
+                                    <option value="column_v2">column_v2</option>
+                                    <option value="paper_v2">paper_v2</option>
+                                    <option value="revise_v2">revise_v2</option>
+                                    <option value="selection_v2">selection_v2</option>
+                                    <option value="manage_v2">manage_v2</option>
+                                </select>
+
+                                <!-- 用户ID -->
+                                <span class="input-group-text" id="urlUserId">...</span>
+
+                                <!-- 可编辑的 nonce 和文件名 -->
+                                <input type="text" id="inputNonce" class="form-control" placeholder="输入nonce或留空自动生成">
+                                <span class="input-group-text">/</span>
+                                <input type="text" id="inputFileName" class="form-control" placeholder="输入文件名或使用源文件名">
+                            </div>
+
+                            <small class="form-text text-muted mt-1">预览: <span id="urlPreview">...</span></small>
+                        </div>
+
+                        <div class="mb-3">
+                            <label>选择文件:</label>
+                            <input type="file" id="fileInput" class="form-control">
+                        </div>
+
+                        <button id="uploadBtn" class="btn btn-primary" onclick="uploadFileBtn()">上传</button>
+                        <p id="uploadResult" class="mt-3"></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-pane fade" id="picture">
+            <div class="container mt-5">
+                <div class="list-group mt-3" style="background:rgba(255,255,255,0.8)">
+                    <div class="container mb-3">
+                        <br />
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h1 class="text-primary mb-0">我的图库</h1>
+                            <button class="btn btn-primary btn-sm" id="btnUploadPicture" onclick="uploadPictureBtn()">上传图片</button>
+                        </div>
+
+                        <!-- nav tabs -->
+                        <ul class="nav nav-tabs" id="pictureTabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="normal-tab" data-bs-toggle="tab"
+                                    data-bs-target="#normal" type="button" role="tab">正常图片</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="recycle-tab" data-bs-toggle="tab" data-bs-target="#recycle"
+                                    type="button" role="tab">回收站</button>
+                            </li>
+                        </ul>
+
+                        <!-- tab content -->
+                        <div class="tab-content mt-3">
+                            <div class="tab-pane fade show active" id="normal" role="tabpanel">
+                                <div id="pictureTable"></div>
+                                <div id="picturePagination" class="d-flex justify-content-center my-3 overflow-auto">
+                                </div>
+                            </div>
+                            <div class="tab-pane fade" id="recycle" role="tabpanel">
+                                <div id="recycleTable"></div>
+                                <div id="recyclePagination" class="d-flex justify-content-center my-3 overflow-auto">
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="tab-pane fade" id="Update">
+            <div class="container mt-5">
+                <div class="progress">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar"
+                        aria-valuenow="75" aria-valuemin="0" aria-valuemax="100" style="width: 21%;"></div>
+                </div>
+                <div class="list-group mt-3 " style="background:rgba(255,255,255,0.8)">
+                    <div class="container mt-3 mb-3">
+                        <h1 class="text-primary">使用说明</h1>
+<div class="container mt-3">
+<p class="text-muted small">本页只讲网页端的操作；两条自动化流水线在仓库的 <code>pipeline/</code> 目录，见最后一节。</p>
+<h3 class="text-primary">云笔记</h3>
+<p class="text-muted small">浏览、搜索、预览和下载云笔记里的原始图片与附件。</p>
+<ul>
+<li><strong>文件夹</strong>：按目录层级浏览，进入文件夹后分页加载</li>
+<li><strong>全部笔记</strong>：平铺列表，适合按标题找东西</li>
+<li><strong>搜索</strong>：输入名称关键词过滤</li>
+<li>点击笔记进入预览：按页显示原图，也能看到每页的附件（模板 <code>.bin</code>、<code>screenshot.png</code>、整页 <code>.webp</code>）</li>
+<li><strong>导出为 PDF</strong>：按页序拼成 A4 PDF，每页用该页自己的整页图（不是缩略图）</li>
+<li><strong>一键下载</strong>：勾选任意条笔记后打包 ZIP；「全选本页 / 全选全部 / 清空」控制选择范围</li>
+</ul>
+<h3 class="text-primary">PDF 上传</h3>
+<p class="text-muted small">把本地 PDF 转成云笔记。这是本仓库改动最多的模块，行为与旧版差别较大。</p>
+<ul>
+<li>选择文件后<strong>本地渲染</strong>每一页（pdf.js，2880×1800 画布），同时生成逐页缩略图；服务端 <code>pdf2img</code> 只在本地渲染失败时兜底</li>
+<li><strong>自动判定朝向</strong>：有文字层的页面按文字基线角度判定；纯图片页判不出来就保持 0°，不会硬转</li>
+<li><strong>逐页手动旋转</strong>：缩略图条上每页有 ↺ / ↻，点一次转 90°；也可以「全部左转 / 全部右转 / 恢复自动判定」</li>
+<li>标题默认是当前时间，可改；点「开始上传」后看进度条，完成后云端多一条 type=12 笔记</li>
+<li><strong>保持窗口在前台</strong>：Chrome 会降频后台标签页，<code>page.render()</code> 可能不再返回（表现是卡在 15%），切到前台或等 60 秒超时提示</li>
+<li>同一页面会话连续上传多次也正常（模板缓存不会再被删掉）</li>
+</ul>
+<h3 class="text-primary">老师分享</h3>
+<p class="text-muted small">读老师发出的分享内容，把里面的笔记图片与附件取下来。</p>
+<ul>
+<li>粘贴分享链接或口令后读取</li>
+<li>支持预览、单条保存与批量保存</li>
+</ul>
+<h3 class="text-primary">在线专栏</h3>
+<p class="text-muted small">浏览课程章节，或把整门课批量导出。</p>
+<ul>
+<li>单篇：选课程 → 展开章节 → 在线预览 / 下载源文件（视频、文档等）</li>
+<li>批量：列出课程的若干章节，一次导出到本地</li>
+</ul>
+<h3 class="text-primary">化学卷</h3>
+<p class="text-muted small">独立页面 <code>chem.html</code>：化学卷选择题的结构化整理与图片导出。</p>
+<h3 class="text-primary">领创</h3>
+<p class="text-muted small">管理领创平台的设备应用与管理员密码。该模块的密钥不在仓库里，需在 <code>config.local.js</code> 配置，否则会提示缺失。</p>
+<ul>
+<li>输入<strong>设备号、用户名、设备型号</strong>后点「登录并获取应用」</li>
+<li>「应用管理」查看应用列表，点详情看图标与下载地址</li>
+<li>「密码计算器」输入设备号得到当天管理员密码</li>
+</ul>
+<h3 class="text-primary">沿用上游的页签</h3>
+<p class="text-muted small">以下功能来自上游，本仓库未改动，仅列出用途：</p>
+<ul>
+<li><strong>新测评</strong>：查看测评任务与详情</li>
+<li><strong>错题本</strong>：按学科/分类筛选错题，预览图片与原始文件</li>
+<li><strong>随身答</strong>：浏览问答列表，可回复与下载图片</li>
+<li><strong>选课 / 优客畅学</strong>：选课与课程学习</li>
+<li><strong>图库 / 下载应用 / 开发工具 / 高级选项</strong>：图片浏览、App 安装包、OSS 与题库上传、代理开关</li>
+</ul>
+<h3 class="text-primary">自动化流水线（不在网页里）</h3>
+<p class="text-muted small">仓库的 <code>pipeline/</code> 目录，复用本页面的登录态（先起 8088 静态服务，再用调试端口 9222 打开本页）。</p>
+<ul>
+<li><code>node pipeline/html2note.js --watch --check-cloud</code>：监听 <code>output/</code> 的 HTML → 打印成 PDF → 上传成云笔记；同时巡检云端根目录，把标题含关键字的笔记下载到 <code>input/</code></li>
+<li><code>node pipeline/html2note.js --check-auth</code>：只检查登录态（会用 refreshToken 续期）</li>
+<li>读题作答 → 渲染 → 校验 → 发布：<code>python pipeline/scripts/pipeline.py --help</code></li>
+</ul>
+<h3 class="text-primary">说明与致谢</h3>
+<ul>
+<li>本项目基于 <a href="https://github.com/BennyLoshop/ZhongYuToolbox" target="_blank" rel="noopener">BennyLoshop / ZhongYuToolbox</a> 的网页版工具箱，在其之上做了扩展与修复</li>
+<li>本仓库不接受捐助；要支持请支持原作者</li>
+<li>AES 主密钥不在仓库里，需在 <code>web-toolbox/config.local.js</code> 自行配置（见 <code>docs/keys.md</code>）</li>
+<li>逐条变更见 <code>CHANGELOG.md</code></li>
+</ul>
+</div>
+                    </div>
+                    <div class="container mb-3">
+                        <h1 class="text-primary">致谢</h1>
+                        <div class="container mt-3">
+                            感谢各位的使用，我们有缘再会。
+                            <br>
+                            开发：
+                            Loshop
+                        </div>
+                    </div>
+
+                    <div class="container mb-3">
+                        <h1 class="text-primary">更新日志</h1>
+                        <div class="accordion" id="accordionExample"></div>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal fade" id="lessonModal" tabindex="-1" aria-labelledby="lessonModalLabel"
+            data-bs-backdrop="static" aria-hidden="true">
+            <div class="modal-dialog modal-xl modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="lessonModalLabel">查看资源<small></small></h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"
+                            onclick="$('#show_re').html('');"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div id="show_re"></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-warning" data-bs-dismiss="modal"
+                            onclick="$('#show_re').html('');back_to_lesson();">返回</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="tab-pane fade" id="lesson2">
+            <div class="container mt-5">
+                <div class="alert alert-dismissible alert-info">
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    <strong>提示</strong> 如果遇到视频无法播放或其他渲染异常请点击“手动渲染”按钮或<a href="https://forms.office.com/r/H7GDeK65Ux"
+                        class="down" data-toggle="modal">点此反馈</a>
+                </div>
+                <div class="input-group mb-3">
+                    <label class="input-group-text" for="course_input">课程</label>
+                    <input class="form-control" id="course_input" readonly placeholder="请选择课程">
+                    <button class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#courseModal">
+                        更换课程
+                    </button>
+                    <button class="btn btn-outline-success" id="courseShareBtn" type="button" style="display:none;" title="分享此课程" onclick="(function(){var s=window._currentShare;if(s)openShareModal(s.type,s.id,s.title,s.chapterId);})()">分享</button>
+                </div>
+                <div class="input-group mb-3">
+                    <div id="cid_card" class="card"
+                        style="max-height:300px; overflow-y:auto; width:100%; padding:10px;"><p>请先选择课程</p>
+                        <!-- 章节列表会动态生成在这里 -->
+                    </div>
+                </div>
+
+                <div class="input-group mb-3">
+                    <label class="input-group-text" for="id_input" readonly="">课程ID</label>
+                    <input class="form-control" id="id_input" readonly="">
+                    <label class="input-group-text" for="cid_input" readonly="">章节ID</label>
+                    <input class="form-control" id="cid_input" readonly="">
+                    <button id="load" class="btn btn-secondary" type="button" onclick="show_page()">刷新</button>
+                    <button id="reload_lesson" class="btn btn-primary" type="button" onclick="change_all()">手动渲染
+                    </button>
+                    <button type="button" class="btn btn-info" onclick="down_adv()">下载源文件</button>
+                </div>
+                <div class="list-group mt-3 " style="background:rgba(255,255,255,0.8)">
+
+
+                    <div class="container mb-3">
+                        <p></p>
+                        <div id="show"></div>
+
+                    </div>
+                </div>
+                <div class="modal fade" id="courseModal" tabindex="-1" aria-labelledby="courseModalLabel"
+                    aria-hidden="true">
+                    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="courseModalLabel">选择课程</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"
+                                    aria-label="关闭"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="input-group mb-3">
+                                    <input type="text" id="courseSearch" class="form-control" placeholder="搜索课程..."
+                                        oninput="filterCourses()">
+                                </div>
+                                <div id="courseGrid" class="row g-3"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+
+                <input id="1" type="button" class="d-none btn btn-primary" data-bs-toggle="modal"
+                    data-bs-target="#preview">
+                <div class="modal fade" id="preview" tabindex="-1" aria-labelledby="previewModalLabel"
+                    aria-hidden="true">
+                    <div class="modal-dialog modal-fullscreen-md-down modal-xl modal-dialog-centered">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="previewModalLabel">问题详情</h5>
+                                <input type="button" class="btn-close" data-bs-dismiss="modal"
+                                    aria-label="Close"></button>
+                            </div>
+                            <div id="1_body" class="modal-body">
+
+                            </div>
+                            <div class="modal-footer justify-content-between">
+                                <input id="1_download" type="button" class="btn btn-secondary" style="float:left"
+                                    value="下载">
+                                <input type="button" class="btn btn-secondary" data-bs-dismiss="modal" value="关闭">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- 错题本详情 Modal -->
+    <div class="modal fade" id="screenshotModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-scrollable modal-fullscreen">
+            <div class="modal-content border border-primary rounded-3">
+                <div class="modal-header">
+                    <h5 class="modal-title">错题详情</h5>
+                    <div class="d-flex align-items-center">
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="关闭"></button>
+                    </div>
+                </div>
+                <div class="modal-body bg-light p-3">
+                    <!-- 题目 -->
+                    <div class="card mb-3" id="mistakeQstCard" style="display:none;">
+                        <div class="card-header fw-bold text-primary">题目</div>
+                        <div class="card-body" id="mistakeQstBody"></div>
+                    </div>
+                    <!-- 答案 -->
+                    <div class="card mb-3" id="mistakeAnsCard" style="display:none;">
+                        <div class="card-header fw-bold text-success">答案</div>
+                        <div class="card-body" id="mistakeAnsBody"></div>
+                    </div>
+                    <!-- 解析 -->
+                    <div class="card mb-3" id="mistakeExpCard" style="display:none;">
+                        <div class="card-header fw-bold text-info">解析</div>
+                        <div class="card-body" id="mistakeExpBody"></div>
+                    </div>
+                    <!-- 笔记 -->
+                    <div class="card mb-3" id="mistakeNoteCard" style="display:none;">
+                        <div class="card-header fw-bold text-primary">笔记</div>
+                        <div class="card-body p-2">
+                            <img id="screenshotImg" src="" alt="screenshot" class="img-fluid w-100 rounded">
+                        </div>
+                    </div>
+                    <!-- 图片笔记 -->
+                    <div class="card mb-3" id="mistakePicCard" style="display:none;">
+                        <div class="card-header fw-bold text-primary">图片笔记</div>
+                        <div class="card-body" id="mistakePicBody"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 分享密码输入 Modal -->
+    <div class="modal fade" id="sharePwdModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-sm modal-dialog-centered">
+            <div class="modal-content rounded-3">
+                <div class="modal-header bg-warning">
+                    <h5 class="modal-title">🔒 需要密码</h5>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small">此分享需要密码才能查看</p>
+                    <input type="password" id="sharePwdInput" class="form-control" placeholder="请输入分享密码" onkeydown="if(event.key==='Enter')submitSharePwd()">
+                    <div id="sharePwdError" class="text-danger small mt-1" style="display:none;">密码错误，请重试</div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+                    <button class="btn btn-primary btn-sm" onclick="submitSharePwd()">确认</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 分享创建 Modal -->
+    <div class="modal fade" id="shareCreateModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content rounded-3">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title">创建分享</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="alert alert-info alert-dismissible fade show rounded-0 mb-0" role="alert" style="border-radius:0;">
+                    <small>分享功能需要服务器资源支持，如果方便的话，欢迎支持一下作者</small>
+                    <button type="button" class="btn btn-sm btn-warning ms-2" onclick="$('#shareCreateModal').modal('hide'); $('a[href=&quot;#Donate&quot;]').tab('show');">支持作者</button>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="关闭"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">资源类型</label>
+                        <input type="text" id="shareResType" class="form-control" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">标题</label>
+                        <input type="text" id="shareTitle" class="form-control" placeholder="给分享起个名字">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">访问密码 <small class="text-muted">(可选)</small></label>
+                        <input type="text" id="sharePwd" class="form-control" placeholder="留空则无需密码">
+                    </div>
+                    <div class="row mb-3">
+                        <div class="col">
+                            <label class="form-label">过期时间 <small class="text-muted">(小时, 0=永久)</small></label>
+                            <input type="number" id="shareExpiry" class="form-control" value="0" min="0">
+                        </div>
+                        <div class="col">
+                            <label class="form-label">最大查看次数 <small class="text-muted">(0=不限)</small></label>
+                            <input type="number" id="shareMaxViews" class="form-control" value="0" min="0">
+                        </div>
+                    </div>
+                        <div id="shareResultBox" style="display:none;" class="alert alert-success mb-0">
+                            <strong>分享链接已生成！</strong>
+                            <div class="input-group mt-2">
+                                <input type="text" id="shareLinkInput" class="form-control" readonly>
+                                <button class="btn btn-outline-secondary" onclick="copyShareLink()">复制</button>
+                            </div>
+                        </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button class="btn btn-primary" id="shareCreateBtn" onclick="createShare()">生成分享链接</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="DPlayer.min.js"></script>
+    <script src="index.js?v=24"></script>
+    <script src="pdf-upload.js?v=14"></script>
+    <script src="linspirer.js"></script>
+    <script src="batch_pick.js?v=7"></script>
+    <script src="share_read.js?v=8"></script>
+    <script src="column_read.js?v=7"></script>
+<script src="column_batch.js?v=4"></script>
+
+    <script>
+        $("form .dropdown-item").click(function () {
+            $(searchE).text($(this).text()), searcher.action = $(this).data("url"), searchKeys.placeholder = $(this).data("text"), searchKeys.name = $(this).data("var")
+        })
+
+        //check_blacklist();
+    </script>
+
+    <style>
+        .hub {
+            font-family: sans-serif;
+            font-weight: bold;
+        }
+
+        /* 随身答未读角标丝带 */
+        .ques-card {
+            position: relative;
+            overflow: hidden;
+        }
+        .ques-unread-ribbon {
+            position: absolute;
+            bottom: 8px;
+            right: -26px;
+            width: 90px;
+            text-align: center;
+            font-size: 11px;
+            font-weight: bold;
+            color: #fff;
+            background: #dc3545;
+            padding: 3px 0;
+            transform: rotate(-45deg);
+            z-index: 2;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+            pointer-events: none;
+        }
+        /* 问题预览双栏布局 */
+        #preview .modal-content {
+            display: flex;
+            flex-direction: column;
+            max-height: 90vh;
+        }
+        #preview .modal-body {
+            flex: 1 1 auto;
+            min-height: 0;
+        }
+        #ques_preview_body {
+            position: relative;
+            overflow: hidden;
+            height: 100%;
+        }
+        .ques-preview-row {
+            min-height: 40vh;
+        }
+        @media (max-width: 767.98px) {
+            #preview .modal-content {
+                max-height: 100vh;
+            }
+        }
+        .ques-sidebar-scroll {
+            flex: 1;
+            overflow-y: auto;
+            min-height: 0;
+        }
+        .ques-msg-name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 6em;
+        }
+        #quesSidebar {
+            transition: none;
+        }
+        @media (min-width: 768px) {
+            #quesSidebar {
+                max-height: 70vh;
+                overflow: hidden;
+            }
+        }
+        @media (max-width: 767.98px) {
+            .ques-preview-row {
+                position: absolute;
+                top: 0; left: 0; right: 0; bottom: 0;
+                margin: 0 !important;
+            }
+            #quesSidebar.collapse:not(.show) {
+                display: none;
+            }
+            #quesSidebar.collapsing,
+            #quesSidebar.collapse.show {
+                position: absolute;
+                top: 0; left: 0; right: 0; bottom: 0;
+                z-index: 3;
+                display: flex !important;
+                flex-direction: column;
+                height: 100% !important;
+                max-height: none;
+            }
+        }
+        /* 分享查看：JSON 预览样式 */
+        .json-view {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 16px;
+            max-height: 500px;
+            overflow: auto;
+            font-size: .85rem;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        /* 分享课程/章节内容容器 */
+        #shareCourseContent {
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+        }
+        #shareCourseContent img {
+            max-width: 100% !important;
+            height: auto;
+        }
+        #shareCourseContent table {
+            max-width: 100%;
+            display: block;
+            overflow-x: auto;
+        }
+
+        /* 高级筛选 details 展开时箭头旋转 */
+        details.adv-filter[open] summary svg {
+            transform: rotate(180deg);
+        }
+        /* 支持作者 tab 选中紫色背景 */
+        #sidebarMenu a.nav-link[href="#Donate"].active {
+            color: #fff !important;
+            background: #7c3aed !important;
+        }
+
+        .hub span:nth-child(2) {
+            background: #FF9900;
+            color: #000000;
+            border-radius: 1vw;
+            padding: 3% 7%;
+            display: inline-block;
+        }
+
+        small:hover {
+            cursor: pointer;
+        }
+
+        .snap {
+            height: 5vh;
+        }
+
+        tbody,
+        td,
+        tfoot,
+        th,
+        thead,
+        tr,
+        .list-group-item {
+            transition: 0.3s;
+        }
+
+        .avatar {
+            width: 1.3em;
+            margin-right: 5px;
+            margin-bottom: 2px;
+        }
+
+        .table-light {
+            background-color: rgba(255, 255, 255, 0.8) !important;
+        }
+
+        a.down {
+            cursor: pointer;
+            display: inline-block;
+            text-align: center;
+            white-space: nowrap;
+            background: #0071e3;
+            color: #fff;
+            border-radius: 980px;
+            font-size: 12px;
+            line-height: 1.33337;
+            font-weight: 400;
+            letter-spacing: -.01em;
+            font-family: "SF Pro Text", "SF Pro Icons", "Helvetica Neue", "Helvetica", "Arial", sans-serif;
+            min-width: 23px;
+            padding-left: 11px;
+            padding-right: 11px;
+            padding-top: 4px;
+            padding-bottom: 4px;
+        }
+        /* ===== 画板样式 ===== */
+        #canvasInner {
+            overflow: hidden;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+        }
+        #boardCanvas {
+            display: block;
+        }
+        #boardModal .navbar .btn {
+            font-size: 0.8rem;
+        }
+        /* 选中状态：蓝色填充 */
+        #boardModal .navbar .btn-outline-dark.active {
+            background-color: #0d6efd;
+            border-color: #0d6efd;
+            color: #fff;
+        }
+        #boardModal .navbar .btn-outline-dark.active:hover {
+            background-color: #0b5ed7;
+            border-color: #0a58ca;
+            color: #fff;
+        }
+        #boardModal .navbar .vr {
+            margin: 0 2px;
+        }
+        .color-swatch {
+            width: 24px; height: 24px;
+            border-radius: 50%;
+            border: 2px solid #555;
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+        .color-swatch:hover { transform: scale(1.2); border-color: #333; }
+        .color-swatch.active { border-color: #0d6efd; box-shadow: 0 0 6px 2px rgba(13,110,253,0.5); }
+        .bg-swatch {
+            width: 20px; height: 20px;
+            border-radius: 3px;
+            border: 2px solid #555;
+            cursor: pointer;
+        }
+        .bg-swatch:hover { border-color: #333; }
+        .bg-swatch.active { border-color: #0d6efd; box-shadow: 0 0 4px 1px rgba(13,110,253,0.5); }
+        #boardModal .btn-sm-w { font-size: 0.7rem; padding: 1px 6px; }
+    </style>
+    <!-- 返回顶部按钮 -->
+    <button id="back_to_top" class="btn btn-primary" style="
+    position: fixed;
+    bottom: 40px;
+    right: 40px;
+    display: none;
+    z-index: 999;
+    border-radius: 50%;
+    width: 45px;
+    height: 45px;
+">
+        <!-- icon666.com - MILLIONS OF FREE VECTOR ICONS --><svg viewBox="0 0 512 512"
+            xmlns="http://www.w3.org/2000/svg">
+            <g id="_09_Settings" data-name="09 Settings">
+                <path
+                    d="m410 1h-308a102.12 102.12 0 0 0 -102 102v308a102.12 102.12 0 0 0 102 102h308a102.12 102.12 0 0 0 102-102v-308a102.12 102.12 0 0 0 -102-102zm-79 411.56h-150a20 20 0 1 1 0-40h150a20 20 0 0 1 0 40zm26.46-197.4a20 20 0 0 1 -28.29 0l-53.17-53.16v157.62a20 20 0 0 1 -40 0v-157.62l-53.17 53.18a20 20 0 0 1 -28.29-28.29l77.56-77.55a33.85 33.85 0 0 1 47.8 0l77.56 77.55a20 20 0 0 1 0 28.27z"
+                    fill="#000000" style="fill: rgb(255, 255, 255);"></path>
+            </g>
+        </svg> </button>
+
+    <!-- ===== 画板脚本 ===== -->
+    <script>
+    (function(){
+        var CANVAS_W = 2200, CANVAS_H = 1395;
+        var canvasEl = document.getElementById('boardCanvas');
+        if (!canvasEl) return;
+        var fabricCanvas = new fabric.Canvas(canvasEl, {
+            width: CANVAS_W, height: CANVAS_H,
+            backgroundColor: '#ffffff',
+            selection: true, preserveObjectStacking: true,
+            stopContextMenu: true, fireRightClick: false
+        });
+        var currentTool = 'select', zoomLevel = 1;
+        var undoStack = [], redoStack = [];
+        var currentColor = '#000000', currentWidth = 3;
+        var MAX_HISTORY = 50;
+        var boardInited = false;
+
+        // ---- Zoom ----
+        function applyZoom() {
+            fabricCanvas.setZoom(zoomLevel);
+            $('#canvasInner').css({
+                width: Math.round(CANVAS_W * zoomLevel) + 'px',
+                height: Math.round(CANVAS_H * zoomLevel) + 'px'
+            });
+            $('#zoomLabel').text(Math.round(zoomLevel * 100) + '%');
+        }
+        function fitZoom() {
+            var wrap = document.getElementById('canvasWrap');
+            var pad = 32;
+            zoomLevel = Math.min((wrap.clientWidth - pad) / CANVAS_W, (wrap.clientHeight - pad) / CANVAS_H, 1);
+            applyZoom();
+        }
+
+        // ---- Undo/Redo ----
+        function saveState() {
+            var json = fabricCanvas.toJSON(['id']);
+            undoStack.push(json);
+            if (undoStack.length > MAX_HISTORY) undoStack.shift();
+            redoStack = [];
+        }
+        function undo() {
+            if (undoStack.length < 2) return;
+            var cur = undoStack.pop();
+            redoStack.push(cur);
+            fabricCanvas.loadFromJSON(undoStack[undoStack.length - 1], function () {
+                fabricCanvas.renderAll(); refreshToolState();
+            });
+        }
+        function redo() {
+            if (!redoStack.length) return;
+            var nxt = redoStack.pop();
+            undoStack.push(nxt);
+            fabricCanvas.loadFromJSON(nxt, function () {
+                fabricCanvas.renderAll(); refreshToolState();
+            });
+        }
+        saveState();
+        fabricCanvas.on('object:modified', function () { saveState(); });
+        fabricCanvas.on('path:created', function () { saveState(); });
+
+        // ---- Tool ----
+        function setTool(tool) {
+            currentTool = tool;
+            $('#boardModal .navbar .btn').removeClass('active');
+            fabricCanvas.isDrawingMode = false;
+            fabricCanvas.selection = true;
+            fabricCanvas.defaultCursor = 'default';
+            switch (tool) {
+                case 'select': $('#btnSelect').addClass('active'); break;
+                case 'draw':
+                    $('#btnDraw').addClass('active');
+                    fabricCanvas.isDrawingMode = true;
+                    fabricCanvas.freeDrawingBrush.color = currentColor;
+                    fabricCanvas.freeDrawingBrush.width = currentWidth;
+                    fabricCanvas.selection = false;
+                    break;
+                case 'text':
+                    $('#btnText').addClass('active');
+                    addText(CANVAS_W / 2 - 150, CANVAS_H / 2 - 20);
+                    saveState(); setTool('select'); return;
+                case 'image':
+                    $('#btnImage').addClass('active');
+                    break;
+            }
+        }
+        function addText(x, y) {
+            var tb = new fabric.Textbox('双击输入文字', {
+                left: x, top: y, width: 360, fontSize: 40,
+                fill: currentColor, fontFamily: 'sans-serif', editable: true,
+                splitByGrapheme: true
+            });
+            fabricCanvas.add(tb);
+            fabricCanvas.setActiveObject(tb);
+            tb.enterEditing();
+            tb.selectAll();
+        }
+        function insertImage(dataUrl) {
+            fabric.Image.fromURL(dataUrl, function (img) {
+                var maxW = CANVAS_W * 0.8, maxH = CANVAS_H * 0.8;
+                if (img.width > maxW || img.height > maxH) {
+                    img.scale(Math.min(maxW / img.width, maxH / img.height));
+                }
+                img.set({
+                    left: CANVAS_W / 2 - (img.width * img.scaleX) / 2,
+                    top: CANVAS_H / 2 - (img.height * img.scaleY) / 2
+                });
+                fabricCanvas.add(img);
+                fabricCanvas.setActiveObject(img);
+                saveState();
+            });
+        }
+
+        // ---- Toolbar Events ----
+        $('#btnSelect').click(function () { setTool('select'); });
+        $('#btnDraw').click(function () { setTool('draw'); });
+        $('#btnText').click(function () { setTool('text'); });
+        $('#btnImage').click(function () { setTool('image'); $('#imgInput').click(); });
+        $('#imgInput').change(function (e) {
+            var f = e.target.files[0]; if (!f) return;
+            var r = new FileReader();
+            r.onload = function (ev) { insertImage(ev.target.result); };
+            r.readAsDataURL(f); e.target.value = '';
+        });
+        $('#btnUndo').click(undo);
+        $('#btnRedo').click(redo);
+        $('#btnDelete').click(function () {
+            var a = fabricCanvas.getActiveObject();
+            if (a) { fabricCanvas.remove(a); fabricCanvas.discardActiveObject(); saveState(); }
+        });
+        $('#btnClear').click(function () {
+            swal({
+                title: '确认清空?', text: '画板上所有内容将丢失',
+                type: 'warning', showCancelButton: true,
+                confirmButtonText: '确认清空', cancelButtonText: '取消'
+            }, function (ok) {
+                if (!ok) return;
+                fabricCanvas.clear();
+                fabricCanvas.backgroundColor = '#FFFFFF';
+                fabricCanvas.renderAll();
+                undoStack = []; redoStack = [];
+                saveState();
+                $('#bgSwatches .bg-swatch').removeClass('active');
+                $('#bgSwatches .bg-swatch[data-bg="#FFFFFF"]').addClass('active');
+            });
+        });
+
+        // ==================== 图片裁剪 ====================
+        var cropImg = null, cropRect = null, isCropping = false;
+
+        function updateCropBtnVisibility() {
+            var obj = fabricCanvas.getActiveObject();
+            if (isCropping) return;
+            if (obj && obj.type === 'image') {
+                $('#btnCrop').removeClass('d-none');
+            } else {
+                $('#btnCrop').addClass('d-none');
+            }
+        }
+
+        $('#btnCrop').click(function () {
+            var img = fabricCanvas.getActiveObject();
+            if (!img || img.type !== 'image' || isCropping) return;
+            isCropping = true;
+            cropImg = img;
+            fabricCanvas.discardActiveObject();
+
+            // 创建裁剪矩形
+            cropRect = new fabric.Rect({
+                left: img.left,
+                top: img.top,
+                width: img.width * img.scaleX,
+                height: img.height * img.scaleY,
+                fill: 'rgba(0,120,255,0.15)',
+                stroke: '#0078ff',
+                strokeWidth: 2,
+                strokeDashArray: [8, 4],
+                cornerColor: '#0078ff',
+                cornerSize: 10,
+                transparentCorners: false,
+                hasControls: true,
+                hasBorders: true,
+                selectable: true,
+                evented: true,
+                lockRotation: true,
+                lockUniScaling: false
+            });
+            fabricCanvas.add(cropRect);
+            fabricCanvas.setActiveObject(cropRect);
+            fabricCanvas.renderAll();
+
+            // 显示确认/取消按钮
+            $('#btnCrop').addClass('d-none');
+            $('#btnCropConfirm').removeClass('d-none');
+            $('#btnCropCancel').removeClass('d-none');
+            // 裁剪时禁用其他工具按钮
+            $('#boardModal .navbar .btn').not('#btnCropConfirm,#btnCropCancel').prop('disabled', true);
+        });
+
+        $('#btnCropConfirm').click(function () {
+            if (!isCropping || !cropImg || !cropRect) return;
+            try {
+                var img = cropImg;
+                var rect = cropRect;
+
+                // 计算在原图坐标中的裁剪区域
+                var sX = img.scaleX, sY = img.scaleY;
+                var imgW = img.width, imgH = img.height;
+                var cLeft = Math.max(0, (rect.left - img.left) / sX);
+                var cTop = Math.max(0, (rect.top - img.top) / sY);
+                var cW = Math.min(rect.width / sX, imgW - cLeft);
+                var cH = Math.min(rect.height / sY, imgH - cTop);
+                if (cW <= 0 || cH <= 0) { swal('无效裁剪区域', '', 'warning'); return; }
+
+                var offC = document.createElement('canvas');
+                offC.width = cW; offC.height = cH;
+                offC.getContext('2d').drawImage(img._element, cLeft, cTop, cW, cH, 0, 0, cW, cH);
+                var dataUrl = offC.toDataURL();
+
+                var self = this;
+                fabric.Image.fromURL(dataUrl, function (newImg) {
+                    newImg.set({ left: rect.left, top: rect.top, scaleX: sX, scaleY: sY });
+                    fabricCanvas.remove(img);
+                    fabricCanvas.remove(rect);
+                    fabricCanvas.add(newImg);
+                    fabricCanvas.setActiveObject(newImg);
+                    saveState();
+                    exitCropMode();
+                });
+            } catch (e) { console.error('裁剪失败:', e); exitCropMode(); }
+        });
+
+        $('#btnCropCancel').click(exitCropMode);
+
+        function exitCropMode() {
+            if (!isCropping) return;
+            isCropping = false;
+            if (cropRect && fabricCanvas.getObjects().includes(cropRect)) {
+                fabricCanvas.remove(cropRect);
+            }
+            cropImg = null; cropRect = null;
+            $('#btnCrop').addClass('d-none');
+            $('#btnCropConfirm').addClass('d-none');
+            $('#btnCropCancel').addClass('d-none');
+            $('#boardModal .navbar .btn').prop('disabled', false);
+            updateCropBtnVisibility();
+            fabricCanvas.renderAll();
+        }
+
+        // ---- Color / Width / BG ----
+        // 用 mousedown 而不是 click，避免点击色板时 fabric 先取消选中文本框
+        $('#colorSwatches').on('mousedown', '.color-swatch', function (e) {
+            e.preventDefault(); // 防止色板抢走焦点
+            currentColor = $(this).data('color');
+            $('#colorSwatches .color-swatch').removeClass('active');
+            $(this).addClass('active');
+            if (fabricCanvas.isDrawingMode) fabricCanvas.freeDrawingBrush.color = currentColor;
+            var a = fabricCanvas.getActiveObject();
+            if (a) {
+                if (a.type === 'textbox' || a.type === 'i-text') {
+                    a.set({ fill: currentColor, styles: {} }); // 清除逐字符样式确保全局换色生效
+                }
+                else if (a.stroke !== undefined) a.set('stroke', currentColor);
+                fabricCanvas.renderAll();
+            }
+        });
+        $('#widthPresets').on('click', '.btn', function () {
+            currentWidth = parseInt($(this).data('width'));
+            $('#widthPresets .btn').removeClass('active');
+            $(this).addClass('active');
+            if (fabricCanvas.isDrawingMode) fabricCanvas.freeDrawingBrush.width = currentWidth;
+            var a = fabricCanvas.getActiveObject();
+            if (a && a.strokeWidth !== undefined) { a.set('strokeWidth', currentWidth); fabricCanvas.renderAll(); }
+        });
+        $('#bgSwatches').on('click', '.bg-swatch', function () {
+            var bg = $(this).data('bg');
+            fabricCanvas.backgroundColor = bg;
+            fabricCanvas.renderAll();
+            $('#bgSwatches .bg-swatch').removeClass('active');
+            $(this).addClass('active');
+        });
+
+        // ---- Selection Sync ----
+        fabricCanvas.on('selection:created', refreshToolState);
+        fabricCanvas.on('selection:updated', refreshToolState);
+        fabricCanvas.on('selection:cleared', refreshToolState);
+
+        function refreshToolState() {
+            updateCropBtnVisibility();
+            var a = fabricCanvas.getActiveObject();
+            if (!a) return;
+            if (a.fill && a.type !== 'rect') selectColorSwatch(a.fill);
+            else if (a.stroke) selectColorSwatch(a.stroke);
+            if (a.strokeWidth !== undefined) selectWidthPreset(a.strokeWidth);
+        }
+        function selectColorSwatch(color) {
+            currentColor = color;
+            $('#colorSwatches .color-swatch').removeClass('active');
+            $('#colorSwatches .color-swatch').each(function () {
+                if ($(this).data('color').toUpperCase() === color.toUpperCase()) $(this).addClass('active');
+            });
+        }
+        function selectWidthPreset(w) {
+            currentWidth = w;
+            $('#widthPresets .btn').removeClass('active');
+            var best = null, bestD = Infinity;
+            $('#widthPresets .btn').each(function () {
+                var d = Math.abs(parseInt($(this).data('width')) - w);
+                if (d < bestD) { bestD = d; best = $(this); }
+            });
+            if (best) best.addClass('active');
+        }
+
+        // ---- Keyboard ----
+        $(document).keydown(function (e) {
+            if (!$('#boardModal').hasClass('show')) return;
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+            if (e.target.id === 'boardSessionId') return;
+            var obj = fabricCanvas.getActiveObject();
+            if (obj && obj.isEditing) return;
+            switch (e.key.toLowerCase()) {
+                case 'v': if (!e.ctrlKey) setTool('select'); break;
+                case 'p': if (!e.ctrlKey) setTool('draw'); break;
+                case 't': if (!e.ctrlKey) setTool('text'); break;
+                case 'delete': case 'backspace':
+                    if (obj) { fabricCanvas.remove(obj); fabricCanvas.discardActiveObject(); saveState(); }
+                    break;
+                case 'z': if (e.ctrlKey) { e.preventDefault(); undo(); } break;
+                case 'y': if (e.ctrlKey) { e.preventDefault(); redo(); } break;
+            }
+        });
+
+        // ---- Paste Image ----
+        $(document).on('paste', function (e) {
+            if (!$('#boardModal').hasClass('show')) return;
+            var items = e.originalEvent.clipboardData.items;
+            for (var i = 0; i < items.length; i++) {
+                if (items[i].type.indexOf('image/') === 0) {
+                    var r = new FileReader();
+                    r.onload = function (ev) { insertImage(ev.target.result); };
+                    r.readAsDataURL(items[i].getAsFile());
+                    break;
+                }
+            }
+        });
+
+        // ---- Export: Upload to OSS + AddMessage ----
+        $('#btnExport').click(async function () {
+            var $btn = $('#btnExport');
+            var sessionId = $('#boardSessionId').val().trim();
+            if (!sessionId) { swal('请输入SessionID', '', 'warning'); return; }
+
+            $btn.prop('disabled', true).text('发送中...');
+
+            try {
+                // 1. Generate canvas images（先复位 zoom=1 导出，避免缩放导致元素挤在角落）
+                var prevZoom = zoomLevel;
+                zoomLevel = 1; applyZoom();
+                var jpgUrl = fabricCanvas.toDataURL({ format: 'jpeg', quality: 0.92, multiplier: 1, width: CANVAS_W, height: CANVAS_H });
+                var pngUrl = fabricCanvas.toDataURL({ format: 'png', multiplier: 1, width: CANVAS_W, height: CANVAS_H });
+                zoomLevel = prevZoom; applyZoom();
+
+                var jpgResp = await fetch(jpgUrl); var jpgBlob = await jpgResp.blob();
+                var pngResp = await fetch(pngUrl); var pngBlob = await pngResp.blob();
+
+                // 2. Build ZIP
+                var zipResp = await fetch('blackbroad.zip');
+                if (!zipResp.ok) throw new Error('下载 blackbroad.zip 失败');
+                var zip = await JSZip.loadAsync(await zipResp.arrayBuffer());
+                var targetPath = 'res/image/7769755f-f199-4371-a655-63ea2edcf153.jpg';
+                if (!zip.file(targetPath)) throw new Error('ZIP中找不到目标文件');
+                zip.file(targetPath, jpgBlob, { binary: true });
+                var zipBlob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+
+                // 3. Upload both to OSS
+                var uid = window.currentUserId;
+                if (!uid) {
+                    try { uid = await getUserId(); } catch(e) { uid = '0'; }
+                }
+                var zipUrl = await uploadBoardFile(zipBlob, uid, 'blackbroad_' + Date.now() + '.zip');
+                var pngUrl2 = await uploadBoardFile(pngBlob, uid, 'snapshot_' + Date.now() + '.png');
+
+                // 4. POST AddMessage
+                var token = localStorage.getItem('token');
+                var addResp = await fetch(window.API_BASE_URL + '/api/services/app/Quora/AddMessage', {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Authorization': 'Bearer ' + token,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        content: zipUrl,
+                        sessionId: sessionId,
+                        snapshot: pngUrl2
+                    })
+                });
+                var addData = await addResp.json();
+                if (addData.success) {
+                    var boardModal = bootstrap.Modal.getInstance(document.getElementById('boardModal'));
+                    boardModal.hide();
+                    // 画板关闭后重新打开消息预览并刷新列表
+                    $('#boardModal').one('hidden.bs.modal', function () {
+                        var previewModal = new bootstrap.Modal(document.getElementById('preview'));
+                        previewModal.show();
+                        // 刷新消息列表，显示刚发送的消息
+                        if (typeof ques_focus !== 'undefined' && ques_focus) {
+                            previewQuestion(ques_focus);
+                        }
+                    });
+                    swal('发送成功', '已发送到随身答会话 ' + sessionId, 'success');
+                } else {
+                    swal('发送失败', JSON.stringify(addData.error || addData), 'error');
+                }
+            } catch (err) {
+                console.error(err);
+                swal('发送失败', err.message, 'error');
+            } finally {
+                $btn.prop('disabled', false).text('发送');
+            }
+        });
+
+        // ---- Board-specific OSS upload using endpoint ----
+        async function uploadBoardFile(file, userId, fileName) {
+            var V_MAP = { quora_v2: 3 };
+            var G_MAP = { res: 1 };
+            var fc = 'quora_v2', fr = 'res', ft = 2, fe = '', fo = '0';
+            var nonce = generateNonce();
+            var ts = Date.now();
+            var dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+            var raw = userId + '+' + fc + '+' + fr + '+' + ft + '+' + fe + '+' + fo + '+' + nonce + '+' + ts;
+            var sign = md5(raw);
+
+            var token = localStorage.getItem('token');
+            var resp = await fetch(window.API_BASE_URL + '/api/services/app/ObjectStorage/GenerateTokenV2Async', {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    'Authorization': 'Bearer ' + token,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ fc: V_MAP[fc], fr: G_MAP[fr], ft: ft, fe: fe, fo: fo, nonce: nonce, ts: ts, sign: sign })
+            });
+            var data = await resp.json();
+            if (!data.result) throw new Error('获取OSS Token失败: ' + JSON.stringify(data));
+
+            var result = data.result;
+            var client = new OSS({
+                region: result.region || 'oss-cn-hangzhou',
+                accessKeyId: result.accessKeyId,
+                accessKeySecret: result.accessKeySecret,
+                stsToken: result.securityToken,
+                bucket: result.bucket
+            });
+            var remoteFile = fc + '/' + fr + '/' + userId + '/' + dateStr + '/' + nonce + '/' + fileName;
+            await client.put(remoteFile, file);
+
+            // Use endpoint from API response
+            var endpoint = (result.endpoint || 'https://' + result.bucket + '.oss-cn-hangzhou.aliyuncs.com');
+            if (!/^https?:\/\//.test(endpoint)) endpoint = 'https://' + endpoint;
+            return endpoint.replace(/\/+$/, '') + '/' + remoteFile;
+        }
+
+        // ---- Zoom UI ----
+        $('#zoomIn').click(function () { zoomLevel = Math.min(zoomLevel + 0.1, 3); applyZoom(); });
+        $('#zoomOut').click(function () { zoomLevel = Math.max(zoomLevel - 0.1, 0.2); applyZoom(); });
+        $('#zoomFit').click(fitZoom);
+        document.getElementById('canvasWrap').addEventListener('wheel', function (e) {
+            if (e.ctrlKey) {
+                e.preventDefault();
+                zoomLevel += e.deltaY < 0 ? 0.05 : -0.05;
+                zoomLevel = Math.min(3, Math.max(0.2, zoomLevel));
+                applyZoom();
+            }
+        }, { passive: false });
+
+        // ---- Lazy Init: init canvas when modal first shown ----
+        $('#boardModal').one('shown.bs.modal', function () {
+            if (boardInited) return;
+            boardInited = true;
+            setTool('select');
+            setTimeout(fitZoom, 100);
+            $(window).on('resize.board', function () {
+                if ($('#boardModal').hasClass('show')) fitZoom();
+            });
+            // 将 fabric 隐藏文本框移到 modal 内，避免 Bootstrap focus trap 夺走焦点
+            fabricCanvas.on('text:editing:entered', function (opt) {
+                var ta = opt.target && opt.target.hiddenTextarea;
+                if (ta && ta.parentNode !== document.getElementById('boardModal')) {
+                    document.getElementById('boardModal').appendChild(ta);
+                    ta.focus();
+                }
+            });
+        });
+        // Re-fit on each modal show, and insert pending question image
+        $('#boardModal').on('shown.bs.modal', function () {
+            if (boardInited) { setTool('select'); setTimeout(fitZoom, 100); }
+            // 插入从预览带来的问题截图（通过代理 Image + 离屏 Canvas 避免污染）
+            if (window._pendingQImg) {
+                var src = window._pendingQImg;
+                window._pendingQImg = null;
+                var qImg = new Image();
+                qImg.crossOrigin = 'anonymous';
+                qImg.onload = function () {
+                    var offC = document.createElement('canvas');
+                    offC.width = qImg.naturalWidth;
+                    offC.height = qImg.naturalHeight;
+                    offC.getContext('2d').drawImage(qImg, 0, 0);
+                    var dataUrl = offC.toDataURL();
+                    fabric.Image.fromURL(dataUrl, function (img) {
+                        var maxW = CANVAS_W * 0.85, maxH = CANVAS_H * 0.55;
+                        if (img.width > maxW || img.height > maxH) {
+                            img.scale(Math.min(maxW / img.width, maxH / img.height));
+                        }
+                        img.set({
+                            left: CANVAS_W / 2 - (img.width * img.scaleX) / 2,
+                            top: 30
+                        });
+                        fabricCanvas.add(img);
+                        saveState();
+                    });
+                };
+                qImg.onerror = function () {
+                    console.error('插入问题截图失败: 图片加载失败');
+                };
+                qImg.src = src;
+            }
+        });
+        // Clear canvas on modal close
+        $('#boardModal').on('hidden.bs.modal', function () {
+            fabricCanvas.clear();
+            fabricCanvas.backgroundColor = '#FFFFFF';
+            fabricCanvas.renderAll();
+            undoStack = []; redoStack = [];
+            saveState();
+            $('#bgSwatches .bg-swatch').removeClass('active');
+            $('#bgSwatches .bg-swatch[data-bg="#FFFFFF"]').addClass('active');
+            $('#boardSessionId').val('');
+            window._pendingQImg = null;
+        });
+
+        // ---- Open board modal from question preview ----
+        window.openBoardModal = function () {
+            if (typeof ques_focus !== 'undefined' && ques_focus) {
+                $('#boardSessionId').val(ques_focus);
+            }
+            // 捕获问题快照图片原始URL，通过代理插入（避免 canvas 污染）
+            var rawSnapshot = $('#ques_detail_img').attr('data-raw-snapshot') || '';
+            window._pendingQImg = rawSnapshot ? window.proxyUrl(rawSnapshot) : '';
+            // Close preview modal first, then show board
+            var previewEl = document.getElementById('preview');
+            var previewModal = bootstrap.Modal.getInstance(previewEl);
+            if (previewModal) {
+                previewModal.hide();
+                $('#preview').one('hidden.bs.modal', function () {
+                    var bsModal = new bootstrap.Modal(document.getElementById('boardModal'));
+                    bsModal.show();
+                });
+            } else {
+                var bsModal = new bootstrap.Modal(document.getElementById('boardModal'));
+                bsModal.show();
+            }
+        };
+    })();
+    </script>
+
+<!-- 更新日志 Modal -->
+<div class="modal fade" id="updateLogModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content rounded-3">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">更新日志</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="关闭"></button>
+            </div>
+            <div class="modal-body" id="updateLogContent">
+                <!-- 更新日志内容将通过JavaScript动态加载 -->
+                <div class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">加载中...</span>
+                    </div>
+                    <p class="mt-2 text-muted">正在加载更新日志...</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-primary" data-bs-dismiss="modal" onclick="markUpdateAsRead()">我知道了</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+    <script>
+        /* 专栏 iframe 高度自适应：调试版多出按钮行时不会被压扁，正常版也不会留白 */
+        (function () {
+            var pane = null, frame = null, last = -1;
+
+            function fit() {
+                if (!pane || !frame) return;
+                if (!pane.offsetParent) return;           // 当前 tab 没显示，等它显示再算
+                var pr = pane.getBoundingClientRect();
+                var fr = frame.getBoundingClientRect();
+                var h = Math.round(pane.clientHeight - (fr.top - pr.top) - 8);
+                if (h < 160) return;
+                if (Math.abs(h - last) < 4) return;
+                last = h;
+                frame.style.height = h + 'px';
+            }
+
+            function boot() {
+                pane = document.getElementById('ZXZL');
+                frame = document.getElementById('zxzl_iframe');
+                if (!pane || !frame) return;
+                fit();
+                setTimeout(fit, 200);
+                setTimeout(fit, 800);
+                window.addEventListener('resize', fit);
+                if (window.ResizeObserver) {
+                    new ResizeObserver(function () { fit(); }).observe(pane);
+                }
+                document.addEventListener('click', function () { setTimeout(fit, 60); }, true);
+            }
+
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', boot);
+            } else {
+                boot();
+            }
+        })();
+    </script>
+
+</body>
+
+</html>

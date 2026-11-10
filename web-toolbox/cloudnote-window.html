@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="utf-8">
+    <title>教务系统云笔记</title>
+    <style>
+        html,
+        body {
+            margin: 0;
+            height: 100%;
+            overflow: hidden;
+            background: #f6f8fa;
+            font: 14px/1.6 system-ui, "Microsoft YaHei", sans-serif;
+            color: #555;
+        }
+
+        #tip {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            text-align: center;
+            padding: 0 24px;
+        }
+
+        #sub {
+            font-size: 12px;
+            color: #999;
+        }
+
+        .btn {
+            display: none;
+            padding: 6px 16px;
+            border: 1px solid #2f9e6f;
+            color: #2f9e6f;
+            border-radius: 6px;
+            cursor: pointer;
+            background: #fff;
+            text-decoration: none;
+            margin: 0 4px;
+        }
+
+        #frame {
+            position: absolute;
+            top: 34px;
+            right: 0;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: calc(100% - 34px);
+            border: 0;
+            display: none;
+        }
+
+        #bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 34px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            background: #fff8e1;
+            border-bottom: 1px solid #f0e0b1;
+            font-size: 12px;
+            color: #8a6d3b;
+            z-index: 9;
+        }
+
+        #barx {
+            color: #8a6d3b;
+            text-decoration: underline;
+            cursor: pointer;
+        }
+
+        #prime {
+            position: absolute;
+            left: -9999px;
+            top: -9999px;
+            width: 1px;
+            height: 1px;
+            border: 0;
+            opacity: 0;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="bar">
+        <span>若下方显示登录页，就在本页登录一次；登录后同一浏览器以后都不用再登录。</span>
+        <a id="barx">知道了</a>
+    </div>
+    <div id="tip">
+        <div id="main">正在建立教务系统会话…</div>
+        <div id="sub">先载入专栏页拿登录态，再切到云笔记</div>
+        <div>
+            <a class="btn" id="again">重试</a>
+            <a class="btn" id="direct" href="about:blank">直接打开云笔记</a>
+        </div>
+    </div>
+    <iframe id="frame" title="教务系统云笔记"></iframe>
+    <iframe id="prime" title="预热" aria-hidden="true"></iframe>
+
+    <script>
+        (function () {
+            var $ = function (id) { return document.getElementById(id); };
+            var frame = $('frame'), prime = $('prime'), tip = $('tip');
+            var main = $('main'), sub = $('sub'), again = $('again'), direct = $('direct');
+
+            $('barx').onclick = function () {
+                var bar = $('bar');
+                bar.style.display = 'none';
+                frame.style.top = '0';
+                frame.style.height = '100%';
+            };
+
+            function ls(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
+
+            function normNavPage() {
+                var b = (ls('navPageBase') || '').trim();
+                if (/^https?:\/\//i.test(b) && /navPage\.html/i.test(b)) return b.replace(/#.*$/, '');
+                var api = (ls('navPageHost') || ls('navApiHost') || '').trim();
+                var origin = '';
+                try {
+                    var u = new URL(api);
+                    if (u.hostname.indexOf('-api.') > -1) {
+                        u.hostname = u.hostname.replace('-api.', '.');
+                        origin = u.origin;
+                    }
+                } catch (e) { /* 忽略 */ }
+                if (/^https?:\/\//i.test(b)) {
+                    try {
+                        var v = new URL(b);
+                        v.pathname = v.pathname.replace(/\/+$/, '') + '/navPage.html';
+                        v.search = ''; v.hash = '';
+                        return v.toString();
+                    } catch (e) { /* 继续 */ }
+                }
+                return (origin || 'https://example-school.example.com') + '/navPage.html';
+            }
+
+            var navPage = normNavPage();
+            var spaOrigin = '';
+            try { spaOrigin = new URL(navPage).origin; } catch (e) { spaOrigin = 'https://example-school.example.com'; }
+
+            var token = ls('navToken') || ls('token');
+            var apiHost = (ls('navPageHost') || ls('navApiHost') || '').trim();
+            var spaUrl = spaOrigin + '/#/index/resourceCenter/cloudNote?menu=dir';
+            var navUrl = navPage + '?apiHost=' + encodeURIComponent(apiHost) + '&apiToken=' + encodeURIComponent(token)
+                + '#/list?messageType=pager';
+
+            direct.href = spaUrl;
+
+            if (!token) {
+                main.textContent = '还没拿到专栏登录态';
+                sub.textContent = '请回到工具箱「在线专栏」页，用学号密码点一次「专栏登录」，再点这个入口。';
+                again.style.display = 'inline-block';
+                again.onclick = function () { location.reload(); };
+                return;
+            }
+
+            var timer = null, done = false;
+
+            function go() {
+                if (done) return;
+                done = true;
+                clearTimeout(timer);
+                tip.style.display = 'none';
+                frame.style.display = 'block';
+                frame.src = spaUrl;
+            }
+
+            function arm(ms) {
+                clearTimeout(timer);
+                timer = setTimeout(go, ms);
+            }
+
+            prime.onload = function () { setTimeout(go, 800); };  // navPage 载完再给它 800ms 写登录态
+            prime.src = navUrl;
+            arm(12000);
+
+            setTimeout(function () {
+                if (done) return;
+                again.style.display = 'inline-block';
+                sub.textContent = '超过 12 秒仍未完成，可以点「重试」，或直接打开云笔记。';
+            }, 6000);
+
+            again.onclick = function () {
+                done = false;
+                again.style.display = 'none';
+                sub.textContent = '重新预热中…';
+                prime.src = navUrl + '&_r=' + Date.now();
+                arm(12000);
+            };
+        })();
+    </script>
+</body>
+
+</html>
