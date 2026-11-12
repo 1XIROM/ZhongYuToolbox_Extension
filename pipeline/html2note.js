@@ -40,7 +40,21 @@ const crypto = require('crypto');
 const { pathToFileURL } = require('url');
 
 const ROOT = __dirname;
-const CFG = JSON.parse(fs.readFileSync(path.join(ROOT, 'config.json'), 'utf8'));
+// config.json 在 .gitignore 里（可能含账号密码），clone 后不会存在。
+// 缺失时回退到仓库自带的模板，避免直接抛 ENOENT；需要自定义再复制模板即可。
+const CFG_PATH = path.join(ROOT, 'config.json');
+const CFG_EXAMPLE = path.join(ROOT, 'config.example.json');
+let CFG_SOURCE = CFG_PATH;
+if (!fs.existsSync(CFG_PATH)) {
+    if (!fs.existsSync(CFG_EXAMPLE)) {
+        console.error('[html2note] 缺少 config.json，且没有 config.example.json 模板。');
+        process.exit(1);
+    }
+    CFG_SOURCE = CFG_EXAMPLE;
+    console.warn('[html2note] 未找到 config.json，已使用 config.example.json 的默认配置。');
+    console.warn('            需要自定义目录 / CDP 地址 / 自动重登账号时，请复制模板为 config.json 再编辑。');
+}
+const CFG = JSON.parse(fs.readFileSync(CFG_SOURCE, 'utf8'));
 const OUT_DIR = path.resolve(ROOT, CFG.outputDir);
 const PDF_DIR = path.resolve(ROOT, CFG.pdfDir);
 const STATE_FILE = path.resolve(ROOT, CFG.stateFile);
@@ -921,7 +935,10 @@ async function runWatch() {
 
 /* ---------------- 入口 ---------------- */
 (async () => {
-    if (!fs.existsSync(OUT_DIR)) throw new Error('HTML 目录不存在: ' + OUT_DIR);
+    if (!fs.existsSync(OUT_DIR)) {
+        fs.mkdirSync(OUT_DIR, { recursive: true });
+        console.log('[html2note] 已创建 HTML 目录: ' + OUT_DIR);
+    }
 
     // 只检?续期登录态，不做任何转换与上?
     if (ARGS.includes('--check-auth')) {

@@ -25,6 +25,7 @@
 - README 的快速开始改用 `node web-toolbox/serve.js 8088`，目录表补上两个新文件。
 - 清理 `index.html` / `pdf-upload.js` 的工作区行尾（仓库 `.gitattributes` 为 `* -text`，不自动转换），避免把数千行纯 CRLF/LF 差异混进提交。
 - 「支持作者 / 支持原作者」页（`#Donate`）加上原作者的赞助链接 <https://ifdian.net/a/loshopwu>：本地版在原有打赏按钮下新增一段说明与「赞助原作者（爱发电）」按钮；发布版把爱发电设为主按钮、GitHub 仓库保留为次按钮，「说明与致谢」列表和分享弹窗文案同步。
+- `pipeline/html2note.js` 开箱修复：`config.json` 被 `.gitignore` 排除，clone 后直接跑会 `ENOENT`；现在缺失时自动回退 `config.example.json` 并给出提示，`output/` 不存在时自动创建而不是抛错。启动脚本的 `WATCH_DIR` 改为显眼的可配置项（发布仓库里的 `pipeline/` 只是脱敏样例，真实流水线往往在别处）。
 
 ## 2026-11-11 — 上传笔记对齐应用版资源结构
 

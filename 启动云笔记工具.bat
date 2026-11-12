@@ -20,6 +20,9 @@ rem ============================================================
 
 set "REPO_DIR=%~dp0"
 set "SERVE_SCRIPT=%REPO_DIR%web-toolbox\serve.js"
+rem  The repo copy of pipeline/ is a sanitized sample. If your real HTML-to-note
+rem  pipeline lives elsewhere, point WATCH_DIR at it, for example:
+rem    set "WATCH_DIR=D:\my\pipeline"
 set "WATCH_DIR=%REPO_DIR%pipeline"
 set "CHROME=%ProgramFiles%\Google\Chrome\Application\chrome.exe"
 set "PROFILE=%TEMP%\zhongyu-toolbox-chrome-prof"
