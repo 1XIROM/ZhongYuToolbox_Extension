@@ -2,6 +2,38 @@
 
 按日期倒序。每个条目都能在 `docs/` 里找到对应的复现步骤或验证数据。
 
+## 2026-11-12 — 领创模块 405：中转域名停用，改走本地同源转发
+
+**修复**：网页版点「登录并获取应用」报 `操作失败: HTTP 405:`。原公网中转域名已复用为「GForm 授权管理」站，nginx 只允许 `OPTIONS, GET`，POST 返回 405 `{"message":"Method Not Allowed"}`；真实上游 `https://cloud.linspirer.com:883/public-interface.php` 仍接受 POST（返回业务 JSON），但不返回 CORS 头，浏览器无法直连。
+
+- 本地静态服务 `.work/serve.js` 新增 `/linspirer/<path>` 同源转发：保留 POST body 与 `Content-Type` 转发到上游，带 CORS、超时、16 MB 上限、最多 3 跳重定向跟随，目标 host 固定以避免变成开放代理；`/linspirer/ping` 用于探活。
+- `web-toolbox/linspirer.js` 与本地版 `ZhongYuToolbox-main/linspirer.js`：默认端点改为 `/linspirer/public-interface.php`，保留直连上游作备用；链路级失败自动换端点，业务错误（`code != 0`）不重试；错误信息带上排查指引。`proxyUrl()` 的图标/下载链接随之映射到同源路径。
+- 两份 `index.html` 的 `linspirer.js` 加 `?v=2` 破缓存。
+- 验证：三份 JS `node --check` 通过；`OPTIONS` 预检 204、`/linspirer/ping` 返回 pong、POST 探针拿到上游业务 JSON；在 vm 里加载真实 `linspirer.js` 构造 AES envelope 走完整链路，返回的是上游业务错误而非「链路不可用」。**未代跑真实设备绑定**（`setdevice` 有服务端副作用）。
+
+**追加修复（同日）— APK 下载到一半自动停止**：上一版转发把 API 响应的 `16 MB` 上限和 `20 s` 超时也套在了 GET 文件下载上，`中育桌面.apk`（32,694,904 B）与 `中育云笔记.apk`（76,095,224 B）传到一半被 `res.destroy()` 掐断，Chrome 报「请检查互联网连接状况」；只有 `文言文150背记.apk`（86,888 B）能下完。
+
+- `/linspirer/` 的 GET/HEAD 改为纯流式 `pipe`：不计数、不主动超时，只有客户端断开才关闭上游；POST JSON-RPC 仍保留限流保护。
+- 透传 `Content-Length` / `Content-Range` / `Accept-Ranges` / `Content-Disposition` / `ETag` / `Last-Modified` 等响应头，并把请求的 `Range` / `If-Range` / `If-Modified-Since` / `If-None-Match` 透传给上游，Chrome 的「继续」可真正断点续传。
+- 验证：HEAD 返回 `content-length: 32694904` 与 `accept-ranges: bytes`；`Range: bytes=0-1023` 返回 `206` + `content-range: bytes 0-1023/32694904`；完整下载 31 MB APK 得到 32,694,904 字节（3.4 s，不再中断）；72 MB 文件尾部 Range 也返回 `206`。
+
+**同日补充 — 让新 Toolbox 能独立跑起来**
+
+- 新增 `web-toolbox/serve.js`：本地静态服务 + `/proxy/` 图片转发 + `/linspirer/` 领创转发（含 Range 断点续传与流式下载）。此前仓库里只有页面脚本，领创模块依赖的转发服务并不在仓库中，clone 后按旧说明用 `npx serve` 会 404。
+- 新增根目录 `启动云笔记工具.bat`：Windows 一键启动 8088 服务、9222 调试 Chrome 与云笔记 watch，`/dry` 只打印动作；路径按脚本所在目录推导，不含本机绝对路径与校内 OSS 主机。
+- README 的快速开始改用 `node web-toolbox/serve.js 8088`，目录表补上两个新文件。
+- 清理 `index.html` / `pdf-upload.js` 的工作区行尾（仓库 `.gitattributes` 为 `* -text`，不自动转换），避免把数千行纯 CRLF/LF 差异混进提交。
+
+## 2026-11-11 — 上传笔记对齐应用版资源结构
+
+**修复**：PDF 自动上传后的笔记在云笔记 App（1.13.4）里能显示，却无法导出或被别的应用打开。根因是出厂模板 bin 的 SHA-256 摘要链、模板目录层级、资源行 `md5` / `resourceType` 都与「中育Toolbox 应用版」不一致，详见 [docs/pdf-upload-fixes.md](docs/pdf-upload-fixes.md) §9。
+
+- `web-toolbox/pdf-upload.js` 新增逐页模板摘要改写（`file.bin` → `router.bin`，且不污染缓存），恢复 `<uuid>/` 模板目录并保留页目录根的扁平兼容副本，每页截图同时放两处；9 条资源行改用真实 md5 与固定 `resourceType` 语义（1=模板 bin / 2=缩略图 / 0=页面图片）。
+- `index.html` 中 `pdf-upload.js?v=14` → `?v=15`、`index.js?v=24` → `?v=25`，避免浏览器沿用旧缓存。
+- `index.js` 的「下载笔记」按资源真实扩展名落盘（OSS 上是 webp，旧代码一律写 `.jpg`，按扩展名解码的应用会报文件损坏）。
+- 同步修改 `ZhongYuToolbox-main/` 下的同源文件（两份仅脱敏占位符不同）。
+- 自检脚本直接加载文件中的真实函数、喂 `example/` 下的 bin 做 12 项断言（摘要替换、长度不变、matrix/command 摘要保留、缓存未污染、9 条资源行等），12/12 通过；两份脚本 `node --check` 通过。真机「导出 PDF / 用其他应用打开」仍需人工确认一次。
+
 ## 2026-11-10 — 发布准备
 
 **安全**

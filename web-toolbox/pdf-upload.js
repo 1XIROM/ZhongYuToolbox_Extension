@@ -1,6 +1,9 @@
 /**
  * PDF上传云笔记功能模块
- * 严格按照 core.py 的 uploadNote 逻辑实现
+ * 资源结构对齐「中育Toolbox 应用版」(NoteView 的 rt()/Ge())：
+ * 逐页改写模板 bin 的 SHA-256 摘要链、md5 按真实内容算、resourceType 用固定语义、
+ * 模板保留 <uuid>/ 子目录。早期版本照抄 core.py 的固定摘要/固定 md5，
+ * 笔记能显示但无法被云笔记 App 导出或用别的应用打开。
  */
 
 // ==================== 全局状态 ====================
@@ -760,6 +763,57 @@ async function blobToMd5(blob) {
     return CryptoJS.MD5(wordArray).toString().toUpperCase();
 }
 
+// ==================== 笔记模板的资源摘要链（对齐「中育Toolbox 应用版」） ====================
+//
+// 模板是二进制结构，出厂时写死了示例资源的 SHA-256：
+//   router.bin → 记着 file.bin / matrix.bin / command.bin 的摘要
+//   file.bin   → 记着该页图片的摘要
+// 把模板原样上传，App 按摘要找到的仍是模板里那张示例图，于是笔记能「显示」，
+// 却无法被导出或用别的应用打开。应用版（NoteView 的 rt()/Ge()）在每页上传前
+// 都会把这条链改写成当页真实图片的摘要，这里照做。
+var NOTE_TEMPLATE_UUID = 'a888b5fb-e65d-4611-a3af-1f80a0fb6ced';
+var NOTE_FILE_BIN = NOTE_TEMPLATE_UUID + '/a2b4fb47-3623-45be-9fe9-57fc62e66651_file.bin';
+var NOTE_ROUTER_BIN = NOTE_TEMPLATE_UUID + '/router.bin';
+var NOTE_PAGE_IMAGE = 'B466246B6F67160E63431159941CD9A9screenCaptureb59d24b6-00fa-4f53-bc4f-1df255a5101a.webp';
+
+async function sha256Hex(blob) {
+    var buffer = await blob.arrayBuffer();
+    if (!(window.crypto && window.crypto.subtle)) {
+        // 个别环境（某些 file:// 场景）没有 SubtleCrypto，退回页面已加载的 CryptoJS
+        return CryptoJS.SHA256(CryptoJS.lib.WordArray.create(new Uint8Array(buffer))).toString();
+    }
+    var digest = await window.crypto.subtle.digest('SHA-256', buffer);
+    return Array.from(new Uint8Array(digest)).map(function (b) {
+        return ('0' + b.toString(16)).slice(-2);
+    }).join('');
+}
+
+// 替换 bin 中唯一一处 64 位十六进制摘要。oldHash 用来在 router.bin 的
+// 三个摘要里精确定位「file.bin」那一个（其余两个属于 matrix/command）。
+async function replaceTemplateHash(blob, newHash, oldHash) {
+    var bytes = new Uint8Array(await blob.arrayBuffer());
+    var text = '';
+    for (var i = 0; i < bytes.length; i++) text += String.fromCharCode(bytes[i]);
+    var re = oldHash ? new RegExp(oldHash, 'g') : /[0-9a-f]{64}/g;
+    var hits = Array.from(text.matchAll(re));
+    if (hits.length !== 1) {
+        throw new Error('笔记模板中的资源摘要结构无效（匹配 ' + hits.length + ' 处）');
+    }
+    var patched = bytes.slice();
+    patched.set(new TextEncoder().encode(newHash), hits[0].index);
+    return new Blob([patched], { type: blob.type || 'application/octet-stream' });
+}
+
+async function patchTemplatesForPage(templates, pageImageBlob) {
+    var out = Object.assign({}, templates);
+    var oldFileHash = await sha256Hex(out[NOTE_FILE_BIN]);
+    out[NOTE_FILE_BIN] = await replaceTemplateHash(
+        out[NOTE_FILE_BIN], await sha256Hex(pageImageBlob));
+    out[NOTE_ROUTER_BIN] = await replaceTemplateHash(
+        out[NOTE_ROUTER_BIN], await sha256Hex(out[NOTE_FILE_BIN]), oldFileHash);
+    return out;
+}
+
 // ==================== 文件选择处理 ====================
 
 async function handlePdfSelect(event) {
@@ -891,168 +945,72 @@ async function uploadPdfAsNote() {
             var pageHash = generatePageHash();
             var pageBase = '/storage/emulated/0/Android/data/com.friday.cloudsnote/userNote/' + userId + '/note/' + customFileId + '/' + pageHash;
 
-            // 上传当前页图片（webp格式，文件名固定）
-            var imgFilename = pageHash + '/B466246B6F67160E63431159941CD9A9screenCaptureb59d24b6-00fa-4f53-bc4f-1df255a5101a.webp';
-            // 先把jpg转webp（用canvas重新绘制）
+            // 上传当前页图片（webp 格式，文件名固定）
+            var imgFilename = pageHash + '/' + NOTE_PAGE_IMAGE;
             var imgBlob = pdfImages[pageIndex].blob;
-            // 直接计算md5
-            var imgMd5 = await blobToMd5(imgBlob);
+
+            // 每页先按当页图片改写模板里的 SHA-256 摘要链，再上传模板。
+            // 改的是这一页的副本，不会污染缓存中的出厂模板。
+            var pageTemplates = await patchTemplatesForPage(templateBlobs, imgBlob);
             await uploadToOss(imgBlob, userId, customFileId, imgFilename);
 
-            // 每页各存一份模板，路径与 pageName 对齐
-            var templateNames = Object.keys(templateBlobs);
+            // 模板按应用版的目录结构逐页各存一份：page_router.bin 在页目录根，
+            // 其余在 <uuid>/ 下（page_router.bin 内部就引用了这个 uuid 目录）。
+            // 页目录根另留一份扁平副本，兼容此前「fileUrl + 页目录 + 文件名」的取法。
+            var templateNames = Object.keys(pageTemplates);
             for (var tk = 0; tk < templateNames.length; tk++) {
                 var tName = templateNames[tk];
                 var tBase = tName.split('/').pop();
-                await uploadToOss(templateBlobs[tName], userId, customFileId, pageHash + '/' + tBase);
-            }
-
-            // 每一页都上传自己的 screenshot.png，并把该页 md5 写进这一页的资源行
-            shotMd5 = null;
-            var shotBlob = pdfImages[pageIndex].pngBlob || null;
-            if (!shotBlob) {
-                try { shotBlob = await toPngBlob(pdfImages[pageIndex].blob); } catch (e) { shotBlob = null; }
-            }
-            if (!shotBlob) {
-                // 兜底：现画一张不带网址的占位图（模板自带的 screenshot.png 已不再上传）
-                try { shotBlob = await makePlaceholderPng(); } catch (e) { shotBlob = null; }
-            }
-            if (shotBlob) {
-                try {
-                    shotMd5 = await blobToMd5(shotBlob);
-                    await uploadToOss(shotBlob, userId, customFileId, pageHash + '/screenshot.png');
-                } catch (e) {
-                    shotMd5 = null;
+                await uploadToOss(pageTemplates[tName], userId, customFileId, pageHash + '/' + tName);
+                if (tName !== tBase) {
+                    await uploadToOss(pageTemplates[tName], userId, customFileId, pageHash + '/' + tBase);
                 }
             }
 
-            resourceList.push({
-                id: pageBase + '/page_router.bin',
-                fileId: customFileId,
-                pageName: pageBase,
-                pageIndex: pageIndex,
-                md5: 'C6FFAEB070ADBEC6B886BE63587CB0F8',
-                resourceType: 1,
-                ossImageUrl: ossBase + '/' + pageHash + '/page_router.bin',
-                createTimeStamp: timestamp,
-                updateTimeStamp: timestamp,
-                toBeUploaded: false,
-                wasDeleted: false
-            });
+            // 缩略图：每页都用自己的真实渲染结果；<uuid>/ 下与页目录根各一份。
+            var shotBlob = pdfImages[pageIndex].pngBlob || null;
+            if (!shotBlob) {
+                try { shotBlob = await toPngBlob(imgBlob); } catch (e) { shotBlob = null; }
+            }
+            if (!shotBlob) {
+                try { shotBlob = await makePlaceholderPng(); } catch (e) { shotBlob = null; }
+            }
+            if (!shotBlob) shotBlob = imgBlob;   // 兜底：至少保证这条资源有对象可下
+            await uploadToOss(shotBlob, userId, customFileId,
+                pageHash + '/' + NOTE_TEMPLATE_UUID + '/screenshot.png');
+            await uploadToOss(shotBlob, userId, customFileId, pageHash + '/screenshot.png');
 
-            resourceList.push({
-                id: pageBase + '/059848e4-1971-47fb-9e47-517266cdef05_matrix.bin',
-                fileId: customFileId,
-                pageName: pageBase,
-                pageIndex: pageIndex,
-                md5: '5D03C5A75809ED20D24C18388BB8AB63',
-                resourceType: 1,
-                ossImageUrl: ossBase + '/' + pageHash + '/059848e4-1971-47fb-9e47-517266cdef05_matrix.bin',
-                createTimeStamp: timestamp,
-                updateTimeStamp: timestamp,
-                toBeUploaded: false,
-                wasDeleted: false
-            });
-
-            resourceList.push({
-                id: pageBase + '/a2b4fb47-3623-45be-9fe9-57fc62e66651_file.bin',
-                fileId: customFileId,
-                pageName: pageBase,
-                pageIndex: pageIndex,
-                md5: '5924B6262213683E6A4A2AFD3E4A270B',
-                resourceType: 1,
-                ossImageUrl: ossBase + '/' + pageHash + '/a2b4fb47-3623-45be-9fe9-57fc62e66651_file.bin',
-                createTimeStamp: timestamp,
-                updateTimeStamp: timestamp,
-                toBeUploaded: false,
-                wasDeleted: false
-            });
-
-            resourceList.push({
-                id: pageBase + '/e339e39b-64d9-4de0-bfaa-dace2a3f8e7d_command.bin',
-                fileId: customFileId,
-                pageName: pageBase,
-                pageIndex: pageIndex,
-                md5: 'FEC4C90827E797E54126BB996BF0AF05',
-                resourceType: 1,
-                ossImageUrl: ossBase + '/' + pageHash + '/e339e39b-64d9-4de0-bfaa-dace2a3f8e7d_command.bin',
-                createTimeStamp: timestamp,
-                updateTimeStamp: timestamp,
-                toBeUploaded: false,
-                wasDeleted: false
-            });
-
-            resourceList.push({
-                id: pageBase + '/header.bin',
-                fileId: customFileId,
-                pageName: pageBase,
-                pageIndex: pageIndex,
-                md5: 'A929A287A521818CA4E56A9E643866AE',
-                resourceType: 1,
-                ossImageUrl: ossBase + '/' + pageHash + '/header.bin',
-                createTimeStamp: timestamp,
-                updateTimeStamp: timestamp,
-                toBeUploaded: false,
-                wasDeleted: false
-            });
-
-            resourceList.push({
-                id: pageBase + '/router.bin',
-                fileId: customFileId,
-                pageName: pageBase,
-                pageIndex: pageIndex,
-                md5: '053971527BD9F3D4E3F9B2A1A4D2023F',
-                resourceType: 1,
-                ossImageUrl: ossBase + '/' + pageHash + '/router.bin',
-                createTimeStamp: timestamp,
-                updateTimeStamp: timestamp,
-                toBeUploaded: false,
-                wasDeleted: false
-            });
-
-            resourceList.push({
-                id: pageBase + '/screenshot.png',
-                fileId: customFileId,
-                pageName: pageBase,
-                pageIndex: pageIndex,
-                md5: shotMd5 || '538BC7AC54289E9EAA758C50A006AE59',
-                resourceType: 2,
-                ossImageUrl: ossBase + '/' + pageHash + '/screenshot.png',
-                createTimeStamp: timestamp,
-                updateTimeStamp: timestamp,
-                toBeUploaded: false,
-                wasDeleted: false
-            });
-
-            resourceList.push({
-                id: pageBase + '/snapshot.bin',
-                fileId: customFileId,
-                pageName: pageBase,
-                pageIndex: pageIndex,
-                md5: '9A26C2CA8A7C8731602497EA578C994F',
-                resourceType: 1,
-                ossImageUrl: ossBase + '/' + pageHash + '/snapshot.bin',
-                createTimeStamp: timestamp,
-                updateTimeStamp: timestamp,
-                toBeUploaded: false,
-                wasDeleted: false
-            });
-
-            // 图片资源（与 core.py 完全一致）
-            // resourceType 必须是 pageIndex，md5 是固定值
-            resourceList.push({
-                id: pageBase + '/res/image/B466246B6F67160E63431159941CD9A9screenCaptureb59d24b6-00fa-4f53-bc4f-1df255a5101a.webp',
-                fileId: customFileId,
-                pageName: pageBase,
-                pageIndex: pageIndex,
-                md5: '4126E637D965204140D4982A1B847283',
-                resourceType: pageIndex,
-                ossImageUrl: ossBase + '/' + pageHash + '/B466246B6F67160E63431159941CD9A9screenCaptureb59d24b6-00fa-4f53-bc4f-1df255a5101a.webp',
-                createTimeStamp: timestamp,
-                updateTimeStamp: timestamp,
-                toBeUploaded: false,
-                wasDeleted: false
-            });
+            // 9 条资源行，与应用版一致：id 是 App 本地路径、ossImageUrl 是 OSS 路径、
+            // md5 全部按真实字节算、resourceType 用固定语义（1=模板 bin / 2=缩略图 / 0=页面图）。
+            var pageEntries = [
+                { rel: 'page_router.bin', blob: pageTemplates['page_router.bin'], type: 1, ossRel: 'page_router.bin' },
+                { rel: NOTE_TEMPLATE_UUID + '/059848e4-1971-47fb-9e47-517266cdef05_matrix.bin', type: 1 },
+                { rel: NOTE_FILE_BIN, type: 1 },
+                { rel: NOTE_TEMPLATE_UUID + '/e339e39b-64d9-4de0-bfaa-dace2a3f8e7d_command.bin', type: 1 },
+                { rel: NOTE_TEMPLATE_UUID + '/header.bin', type: 1 },
+                { rel: NOTE_ROUTER_BIN, type: 1 },
+                { rel: NOTE_TEMPLATE_UUID + '/screenshot.png', blob: shotBlob, type: 2 },
+                { rel: NOTE_TEMPLATE_UUID + '/snapshot.bin', type: 1 },
+                { rel: 'res/image/' + NOTE_PAGE_IMAGE, blob: imgBlob, type: 0, ossRel: NOTE_PAGE_IMAGE }
+            ];
+            for (var ei = 0; ei < pageEntries.length; ei++) {
+                var e = pageEntries[ei];
+                var eBlob = e.blob || pageTemplates[e.rel];
+                if (!eBlob) throw new Error('缺少模板资源: ' + e.rel);
+                resourceList.push({
+                    id: pageBase + '/' + e.rel,
+                    fileId: customFileId,
+                    pageName: pageBase,
+                    pageIndex: pageIndex,
+                    md5: await blobToMd5(eBlob),
+                    resourceType: e.type,
+                    ossImageUrl: ossBase + '/' + pageHash + '/' + (e.ossRel || e.rel),
+                    createTimeStamp: timestamp,
+                    updateTimeStamp: timestamp,
+                    toBeUploaded: false,
+                    wasDeleted: false
+                });
+            }
 
             updatePdfProgress(65 + (pageIndex + 1) / pdfImages.length * 25,
                 '已上传第 ' + (pageIndex + 1) + '/' + pdfImages.length + ' 页');

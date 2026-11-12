@@ -58,6 +58,8 @@
 | 路径 | 内容 |
 | --- | --- |
 | `web-toolbox/` | 网页工具箱：`index.html`、`index.js` 与 6 个扩展模块、pdf.js 与模板、`example/`、`web/` |
+| `web-toolbox/serve.js` | 本地静态服务 + 同源转发：`/proxy/`（图片）、`/linspirer/`（领创 JSON-RPC 与 APK 下载，支持断点续传） |
+| `启动云笔记工具.bat` | Windows 一键启动：8088 服务 + 9222 调试 Chrome + 云笔记 watch；`/dry` 只打印动作 |
 | `pipeline/html2note.js` | HTML → PDF → 云笔记，支持 `--watch` 常驻与 `--check-cloud` |
 | `pipeline/scripts/pipeline.py` | 另一条流水线的调度脚本（扫描 / 队列 / 校验 / 发布） |
 | `pipeline/tools/answer-pipeline/` | 「读题作答 → HTML」Python 包（含 KaTeX 资源与单元测试） |
@@ -69,13 +71,16 @@
 ### 1. 网页工具箱
 
 ```bash
-# 起静态服务（换成你的目录）
-npx serve web-toolbox -l 8088
+# 起本地服务：静态文件 + /proxy/ 图片转发 + /linspirer/ 领创转发
+# 领创模块必须用它，普通静态服务器没有 POST 转发，会直接 404/405
+node web-toolbox/serve.js 8088
 # 另开一个带调试端口的 Chrome
 chrome --remote-debugging-port=9222 \
        --user-data-dir="<你的临时 profile>" \
        http://127.0.0.1:8088/
 ```
+
+Windows 下也可以双击根目录的 `启动云笔记工具.bat`：依次拉起 8088 服务、9222 调试 Chrome 和云笔记 watch，已在运行的会自动跳过；`启动云笔记工具.bat /dry` 只打印动作不启动。脚本里的路径都从自身所在目录推导，换机器只需改顶部的 `CHROME` / `PROFILE` 等变量。
 
 打开页面、用你自己的账号登录后，各模块按页签使用。`pipeline/html2note.js` 也是连这个 9222 + 8088 页面来复用登录态。
 

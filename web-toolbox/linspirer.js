@@ -15,8 +15,14 @@ function linsCipher() {
         iv: CryptoJS.enc.Utf8.parse(window.readLinspirerIv()),
     };
 }
-const LINSPIRER_API_BASE = "https://zytb-linspirer-api.example.com";
+// 原中转域名 zytb-linspirer-api.example.com（真实域名见本地版）已被复用为
+// 「GForm 授权管理」站，nginx 只允许 OPTIONS/GET，POST 一律 405。
+// 真实上游 cloud.linspirer.com:883 仍接受 POST，但不返回 CORS 头，浏览器无法直连。
+// 所以默认走本地服务的同源转发（.work/serve.js 的 /linspirer/ 路由）。
+const LINSPIRER_API_BASE = "/linspirer";
 const LINSPIRER_API = LINSPIRER_API_BASE + "/public-interface.php";
+// 备用：关闭 CORS 检查的环境（如部分客户端 WebView）可以直连上游
+const LINSPIRER_API_DIRECT = "https://cloud.linspirer.com:883/public-interface.php";
 const CLIENT_VERSION = "zhongyukejiao_hem_6.10.004.6";
 const FIXED_UUID = "40E06F51-30D0-D6AD-7F7D-008AD0ADC570";
 
@@ -52,6 +58,41 @@ function linspirerDecrypt(b64text) {
 }
 
 // ==================== API 调用 ====================
+// 依次尝试同源转发与直连上游；只有链路级失败才换下一个端点。
+// 业务错误（HTTP 200 + code != 0）说明链路已通，直接抛给调用方，不重试。
+async function linspirerRequest(body) {
+    const endpoints = [LINSPIRER_API, LINSPIRER_API_DIRECT];
+    const errors = [];
+    for (const url of endpoints) {
+        try {
+            const resp = await fetch(url, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: body
+            });
+            if (!resp.ok) {
+                throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
+            }
+            const respText = await resp.text();
+            console.log("[Linspirer] 原始响应:", url, respText);
+            let result;
+            try {
+                const decrypted = linspirerDecrypt(respText.trim());
+                console.log("[Linspirer] 解密后:", decrypted);
+                result = JSON.parse(decrypted);
+            } catch {
+                console.log("[Linspirer] 明文响应:", respText);
+                result = JSON.parse(respText);
+            }
+            return result;
+        } catch (e) {
+            errors.push(url + " -> " + e.message);
+        }
+    }
+    throw new Error("领创接口不可用：" + errors.join(" | ") +
+        "。请确认已用最新版 .work/serve.js 启动 8088 服务，并从 http://127.0.0.1:8088/ 打开页面（file:// 下无法转发）");
+}
+
 async function linspirerCall(method, paramsObj) {
     const paramsJson = JSON.stringify(paramsObj);
     const envelope = {
@@ -64,30 +105,12 @@ async function linspirerCall(method, paramsObj) {
         params: linspirerEncrypt(paramsJson)
     };
 
-    const resp = await fetch(LINSPIRER_API, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(envelope)
-    });
-
-    if (!resp.ok) {
-        throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
-    }
-
-    const respText = await resp.text();
-    console.log("[Linspirer] 原始响应:", respText);
-    let result;
-    try {
-        const decrypted = linspirerDecrypt(respText.trim());
-        console.log("[Linspirer] 解密后:", decrypted);
-        result = JSON.parse(decrypted);
-    } catch {
-        console.log("[Linspirer] 明文响应:", respText);
-        result = JSON.parse(respText);
-    }
+    const result = await linspirerRequest(JSON.stringify(envelope));
 
     if (result.code !== 0) {
-        throw new Error(result.msg || result.message || JSON.stringify(result));
+        const detail = result.msg || result.message ||
+            (typeof result.data === "string" ? result.data : JSON.stringify(result));
+        throw new Error(detail);
     }
 
     return result;

@@ -2169,7 +2169,12 @@ async function noteDownload2(fileId, name) {
                     let image = await resp.blob();
                     if (!count[list[i].pageIndex])
                         count[list[i].pageIndex] = 1;
-                    zip.file(`${list[i].pageIndex + 1}-${list[i].resourceType == 2 ? "thumbnail" : count[list[i].pageIndex]++}.jpg`, image);
+                    // 按资源真实扩展名落盘：OSS 里存的是 webp，旧代码一律写成 .jpg，
+                    // 按扩展名选解码器的应用（WPS / 系统相册）会直接报「文件损坏」。
+                    const rawUrl = String(list[i].ossImageUrl || url);
+                    let ext = (rawUrl.split('?')[0].match(/\.(jpg|jpeg|png|webp)$/i) || [])[1];
+                    if (!ext) ext = ct.includes('webp') ? 'webp' : ct.includes('png') ? 'png' : 'jpg';
+                    zip.file(`${list[i].pageIndex + 1}-${list[i].resourceType == 2 ? "thumbnail" : count[list[i].pageIndex]++}.${ext.toLowerCase()}`, image);
                 }
             }
         } catch (e) {

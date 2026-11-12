@@ -71,6 +71,29 @@
 
 **修法**：只对图片类资源做 MIME 校验，`.bin` 直接按扩展名放行（打包进 zip）。
 
+## 9. 上传的笔记能显示，却无法导出 / 被别的应用打开
+
+**症状**：答题流水线自动上传的 PDF 笔记，在云笔记 App 1.13.4 里能翻页，但「导出 PDF / 用其他应用打开」失败；同一份 PDF 用「中育Toolbox 应用版」上传则正常。
+
+**根因**：对比应用版 `NoteView`（`rt()` / `Ge()`）与早期 `core.py` 的上传结构，模板 bin 不是可以原样复用的静态文件：
+
+| 位置 | 出厂内容 |
+| --- | --- |
+| `a2b4fb47-…_file.bin` | 示例页图片的 SHA-256（`b7b3e515…`），全文件恰好 1 个 64-hex |
+| `router.bin` | `file.bin` / `matrix.bin` / `command.bin` 三个模板各自的 SHA-256 |
+| `page_router.bin` | 模板目录名 `a888b5fb-e65d-4611-a3af-1f80a0fb6ced` |
+
+应用版每页上传前先把 `file.bin` 里的摘要改成**当页真实 webp** 的 SHA-256，再算出改写后 `file.bin` 的 SHA-256 回填到 `router.bin`，并按 `page_router.bin` 里的 uuid 目录存放模板。旧链路直接上传出厂模板，于是：App 按摘要找不到页面资源、模板被扁平化后路径也对不上；再加上资源行 `md5` 全写死、`resourceType` 误用 `pageIndex`（第 2 页起被当成 bin / 缩略图），导出与分享时的整条校验链就断了。
+
+**修法**（`pdf-upload.js?v=15`）：
+
+- 新增 `sha256Hex()` / `replaceTemplateHash()` / `patchTemplatesForPage()`，逐页改写摘要链；改写的是副本，不污染模板缓存；
+- 模板按 `pageHash/<uuid>/<file>` 上传（`page_router.bin` 放页目录根），页目录根另留一份扁平副本兼容旧取法；截图同时放 `<uuid>/screenshot.png` 与页根；
+- 9 条资源行的 `md5` 全部按真实字节算，`resourceType` 改为 1=模板 bin / 2=缩略图 / 0=页面图片；`id` 用 App 本地路径、`ossImageUrl` 用 OSS 路径；
+- 北京时间日期、真实桶根 `fileUrl`、每页一份模板等既有修复保持不变。
+
+**验证方法**：自检脚本直接加载文件里的真实函数，喂 `example/` 下的 bin 做 12 项断言（摘要替换、文件长度不变、matrix/command 摘要保留、缓存未污染、9 条资源行、type 语义等），12/12 通过；两份脚本 `node --check` 通过。真机侧仍需点一次「导出 PDF / 用其他应用打开」确认。
+
 ---
 
 ## 这些修法的「验收标准」
@@ -78,4 +101,6 @@
 1. 网页端：上传 4 页 PDF，`Resources/GetByFileId` 返回 `rows=36`，每页 9 条；
 2. 手机端：点开笔记能正常显示（这一步只能真机验证）；
 3. 导出：下载回来再逐页渲染，`distinct == pages`；
-4. 结构自检：按手机约定重建 URL，全部 200。
+4. 结构自检：按手机约定重建 URL，全部 200；
+5. 摘要链：每页 `file.bin` 的图片摘要 == 该页 webp 的 SHA-256，`router.bin` 里的 file.bin 摘要 == 改写后 `file.bin` 的 SHA-256（脚本自检）；
+6. 兼容：上传后的笔记在云笔记 App 里能导出 PDF / 用其他应用打开（真机验证）。
