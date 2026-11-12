@@ -1,23 +1,25 @@
 @echo off
-chcp 65001 >nul
 setlocal
 title Toolbox Launcher
 
 rem ============================================================
 rem  One-click start for the three background tasks:
 rem    1) static server http://127.0.0.1:8088  (web-toolbox\serve.js)
-rem    2) Chrome debug instance (port 9222)
+rem    2) Chrome debug instance on port 9222
 rem    3) cloud-note watch (html2note.js --watch --check-cloud)
-rem  Anything already running is skipped (no duplicates).
-rem  Usage: 启动云笔记工具.bat          normal start
-rem         启动云笔记工具.bat /dry     只打印将要执行的动作
+rem  Already-running tasks are skipped (no duplicates).
+rem  Run with no argument for a normal start, or with /dry to
+rem  print the actions without starting anything.
 rem
-rem  所有路径都从本脚本所在目录推导，换机器时只改下面 3 个变量即可。
-rem  如需给某个 OSS 域名指定 IP，可自行给 Chrome 追加：
-rem    --host-resolver-rules="MAP <oss-host> <ip>"
+rem  All paths are derived from this script's own folder.
+rem  To pin an OSS host to a fixed IP, add a Chrome flag such as
+rem    --host-resolver-rules="MAP oss-host ip-address"
+rem  Angle brackets are avoided on purpose: cmd reads them as
+rem  redirection even inside rem lines.
 rem ============================================================
 
 set "REPO_DIR=%~dp0"
+set "SERVE_SCRIPT=%REPO_DIR%web-toolbox\serve.js"
 set "WATCH_DIR=%REPO_DIR%pipeline"
 set "CHROME=%ProgramFiles%\Google\Chrome\Application\chrome.exe"
 set "PROFILE=%TEMP%\zhongyu-toolbox-chrome-prof"
@@ -32,7 +34,9 @@ echo   3) cloud-note watch (--watch --check-cloud)
 echo ============================================================
 echo.
 
-if not exist "%CHROME%" echo [warn ] Chrome not found: "%CHROME%"  -- edit CHROME above
+if not exist "%CHROME%" echo [warn ] Chrome not found: "%CHROME%" -- edit CHROME above
+if not exist "%SERVE_SCRIPT%" echo [warn ] serve.js not found: "%SERVE_SCRIPT%"
+if not exist "%WATCH_DIR%\html2note.js" echo [warn ] html2note.js not found: "%WATCH_DIR%"
 
 rem ---------- 1. static server ----------
 netstat -ano | findstr /R /C:"127.0.0.1:8088 .*LISTENING" >nul
@@ -61,16 +65,20 @@ powershell -NoProfile -Command "if (Get-CimInstance Win32_Process | Where-Object
 if errorlevel 1 (
     echo [skip ] watch already running
 ) else (
-    echo [start] cloud-note watch ...
-    if not defined DRY start "CloudNote watch" /D "%WATCH_DIR%" cmd /k node html2note.js --watch --check-cloud
-    if defined DRY echo        DRY: node html2note.js --watch --check-cloud
+    if not exist "%WATCH_DIR%\html2note.js" (
+        echo [skip ] html2note.js not found under "%WATCH_DIR%"
+    ) else (
+        echo [start] cloud-note watch ...
+        if not defined DRY start "CloudNote watch" /D "%WATCH_DIR%" cmd /k node html2note.js --watch --check-cloud
+        if defined DRY echo        DRY: node html2note.js --watch --check-cloud
+    )
 )
 
 echo.
 echo ------------------------------------------------------------
 echo server  : http://127.0.0.1:8088
 echo log     : pipeline\logs\watch-YYYY-MM-DD.log
-echo watch   : pipeline\output  (new html =^> pdf =^> cloud note)
+echo watch   : pipeline\output   new html becomes pdf becomes cloud note
 echo download: pipeline\input
 echo ------------------------------------------------------------
 echo.
