@@ -68,6 +68,9 @@ cp web-toolbox/config.local.example.js web-toolbox/config.local.js
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
+最后那环里「**谁来读题作答**」不在代码里——`tools/answer-pipeline/` 只做作答之后的渲染、校验与发布。
+这部分由 [`docs/answer-pipeline-prompt.md`](docs/answer-pipeline-prompt.md) 定义：把那份提示词整段复制给任意 AI（本机或远程），它就能接管「读图 → 写稿 → `render --check` → `publish` → `done`」全流程。
+
 ## 目录
 
 | 路径 | 内容 |
@@ -78,6 +81,7 @@ cp web-toolbox/config.local.example.js web-toolbox/config.local.js
 | `pipeline/html2note.js` | HTML → PDF → 云笔记，支持 `--watch` 常驻与 `--check-cloud` |
 | `pipeline/scripts/pipeline.py` | 另一条流水线的调度脚本（扫描 / 队列 / 校验 / 发布） |
 | `pipeline/tools/answer-pipeline/` | 「读题作答 → HTML」Python 包（含 KaTeX 资源与单元测试） |
+| `docs/answer-pipeline-prompt.md` | **给上层 AI 的交接提示词**：整段复制给任意 AI，它就能接管读题→写稿→渲染→发布全流程 |
 | `docs/` | 模块说明、PDF 上传链路的 8 处修复、流水线用法、脱敏说明 |
 | `sample/` | 一份脱敏后的输入（笔记页图）与输出（答案 HTML）示例 |
 
