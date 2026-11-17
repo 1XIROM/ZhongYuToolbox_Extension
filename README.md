@@ -2,7 +2,7 @@
 
 > 个人学习与自动化用途的逆向研究项目：给某校「云笔记 / 云笔记工具箱」网页版补齐它没有的能力，并把「题目 HTML → PDF → 云笔记」做成可常驻的一条流水线。
 >
-> **本仓库已脱敏**：不含账号、令牌、真实笔记内容、校内地址与 **AES 主密钥**。代码里的 `<api-host>`、`<oss-bucket>`、`<relay-host>` 等占位符需要替换成你自己的部署值才能运行，详见 [docs/sanitization.md](docs/sanitization.md)。
+> **本仓库不脱敏、克隆即可跑**：`web-toolbox/` 里写的是真实接口地址（学校 API 主机、OSS 桶、中转主机等），中育 `codeUtils` 的 AES 种子也已内置，**不需要替换任何占位符**。唯一需要自备的是**领创（Linspirer）的 KEY / IV**，写到 `web-toolbox/config.local.js` 即可（见下方「关于 AES 密钥」）。账号、令牌与真实笔记内容不入库。
 
 ## 与上游的关系
 
