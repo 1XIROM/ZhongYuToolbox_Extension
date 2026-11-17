@@ -135,6 +135,47 @@ async function uploadToOss(blob, userId, nonce, filename) {
     return await uploadFile(blob, userId, 'note_v2', nonce, filename);
 }
 
+// 并发上传：一次 OSS PUT 约 0.5-0.9 s，而每页要传十几个对象（页面图 + 模板 + 缩略图），
+// 串行下来一页就是 8-11 s。这里改成固定并发度，路径与内容都不变，只是不再排队。
+var UPLOAD_CONCURRENCY = 6;
+async function uploadMany(items, userId, nonce, limit, _attempt) {
+    var attempt = _attempt || 1;
+    var idx = 0;
+    var errs = [];
+    var n = Math.max(1, Math.min(limit || UPLOAD_CONCURRENCY, items.length));
+    var workers = [];
+    for (var w = 0; w < n; w++) {
+        workers.push((async function () {
+            while (idx < items.length) {
+                var it = items[idx++];
+                try {
+                    await uploadToOss(it.blob, userId, nonce, it.path);
+                } catch (e) {
+                    errs.push(it.path + ' → ' + ((e && e.message) || e));
+                }
+            }
+        })());
+    }
+    await Promise.all(workers);
+    if (!errs.length) return;
+
+    // 整批全失败且是网络类错误：多半是系统代理不可达或瞬时断网，
+    // 等 2 秒整批重试一次（并发 6 个请求会同时撞上同一故障，逐个重试没意义）。
+    // 注意代理绕过名单（127.* 等）会让本地页面看着完全正常，掩盖外网已断的事实。
+    var first = String(errs[0] || '');
+    var isNetErr = /Failed to fetch|NetworkError|Load failed|network error|ERR_/i.test(first);
+    if (isNetErr && errs.length >= items.length && attempt < 2) {
+        try { if (typeof updatePdfProgress === 'function') updatePdfProgress(52, '上传失败，疑似网络/代理异常，2 秒后整批重试…'); } catch (e2) { }
+        await new Promise(function (r) { setTimeout(r, 2000); });
+        return uploadMany(items, userId, nonce, limit, attempt + 1);
+    }
+
+    var hint = isNetErr
+        ? '｜网络类错误：若本机开着代理（如 127.0.0.1:7890 的 Clash），代理不可用时页面内所有外网请求都会 Failed to fetch；请关闭代理，或让 Chrome 以 --no-proxy-server 启动。'
+        : '';
+    throw new Error('OSS 上传失败（' + errs.length + '/' + items.length + '）：' + errs[0] + hint);
+}
+
 // ==================== PDF转图片（使用服务端 pdf2img）====================
 
 /**
@@ -612,7 +653,7 @@ async function renderPdfLocally(pdfFile, onProgress, autoRotate) {
 }
 
 // 生成一张“无网址”的占位缩略图（仅在拿不到第 1 页 PNG 时兜底）。
-// 模板自带的 screenshot.png 左下角有 https://<web-host> 与署名，
+// 模板自带的 screenshot.png 左下角有 https://zytb.loshop.com.cn 与署名，
 // 这里改用 canvas 现画，内容只保留一句说明，不引用任何外部资源。
 function makePlaceholderPng() {
     return new Promise(function (resolve) {
@@ -635,7 +676,7 @@ function makePlaceholderPng() {
 }
 
 async function convertPdfToImagesServer(pdfFile, onProgress) {
-    // 方案：直接上传 PDF 到 <pdf2img-host>，获取转换后的图片 URL 列表
+    // 方案：直接上传 PDF 到 pdf2img.zyai.cc，获取转换后的图片 URL 列表
     var formData = new FormData();
     formData.append('file', pdfFile, pdfFile.name);
 
@@ -643,7 +684,7 @@ async function convertPdfToImagesServer(pdfFile, onProgress) {
         onProgress(0.1, 0, 1);
     }
 
-    var resp = await fetch('https://<pdf2img-host>/upload', {
+    var resp = await fetch('https://pdf2img.zyai.cc/upload', {
         method: 'POST',
         body: formData
     });
@@ -952,7 +993,9 @@ async function uploadPdfAsNote() {
             // 每页先按当页图片改写模板里的 SHA-256 摘要链，再上传模板。
             // 改的是这一页的副本，不会污染缓存中的出厂模板。
             var pageTemplates = await patchTemplatesForPage(templateBlobs, imgBlob);
-            await uploadToOss(imgBlob, userId, customFileId, imgFilename);
+
+            // 先把本页要传的对象收齐，再并发上传（原来逐个 await，一页 16 次串行）
+            var pageUploads = [{ path: imgFilename, blob: imgBlob }];
 
             // 模板按应用版的目录结构逐页各存一份：page_router.bin 在页目录根，
             // 其余在 <uuid>/ 下（page_router.bin 内部就引用了这个 uuid 目录）。
@@ -961,9 +1004,9 @@ async function uploadPdfAsNote() {
             for (var tk = 0; tk < templateNames.length; tk++) {
                 var tName = templateNames[tk];
                 var tBase = tName.split('/').pop();
-                await uploadToOss(pageTemplates[tName], userId, customFileId, pageHash + '/' + tName);
+                pageUploads.push({ path: pageHash + '/' + tName, blob: pageTemplates[tName] });
                 if (tName !== tBase) {
-                    await uploadToOss(pageTemplates[tName], userId, customFileId, pageHash + '/' + tBase);
+                    pageUploads.push({ path: pageHash + '/' + tBase, blob: pageTemplates[tName] });
                 }
             }
 
@@ -976,9 +1019,12 @@ async function uploadPdfAsNote() {
                 try { shotBlob = await makePlaceholderPng(); } catch (e) { shotBlob = null; }
             }
             if (!shotBlob) shotBlob = imgBlob;   // 兜底：至少保证这条资源有对象可下
-            await uploadToOss(shotBlob, userId, customFileId,
-                pageHash + '/' + NOTE_TEMPLATE_UUID + '/screenshot.png');
-            await uploadToOss(shotBlob, userId, customFileId, pageHash + '/screenshot.png');
+            pageUploads.push({ path: pageHash + '/' + NOTE_TEMPLATE_UUID + '/screenshot.png', blob: shotBlob });
+            pageUploads.push({ path: pageHash + '/screenshot.png', blob: shotBlob });
+
+            updatePdfProgress(65 + (pageIndex / Math.max(1, pdfImages.length)) * 15,
+                '正在上传第 ' + (pageIndex + 1) + '/' + pdfImages.length + ' 页（' + pageUploads.length + ' 个对象）...');
+            await uploadMany(pageUploads, userId, customFileId);
 
             // 9 条资源行，与应用版一致：id 是 App 本地路径、ossImageUrl 是 OSS 路径、
             // md5 全部按真实字节算、resourceType 用固定语义（1=模板 bin / 2=缩略图 / 0=页面图）。
@@ -1058,9 +1104,9 @@ async function saveResourceList(userId, resourceList) {
 
 async function saveNote(userId, customFileId, fileName, todayStr) {
     var token = localStorage.getItem('token');
-    // fileUrl 必须指向对象真正所在的桶（此前写死 example-oss-a 主机，而对象都在 example-oss-b，
+    // fileUrl 必须指向对象真正所在的桶（此前写死 ezy-sxz 主机，而对象都在 ezy-nswgy，
     // App 端按 fileUrl + 页目录 + 文件名 取图会全部落空，报“获取文件位置失败”）。
-    var ossRoot = window.ossBaseUrl || 'http://<oss-bucket>.oss-cn-shenzhen.aliyuncs.com/';
+    var ossRoot = window.ossBaseUrl || 'http://ezy-nswgy.oss-cn-shenzhen.aliyuncs.com/';
     var fileUrl = ossRoot + 'note_v2/res/' + userId + '/' + todayStr + '/' + customFileId + '/';
     var plainData = JSON.stringify({
         fileId: customFileId,

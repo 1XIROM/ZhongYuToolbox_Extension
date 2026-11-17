@@ -16,19 +16,34 @@
 | PDF 上传链路 | 8 处修复，每处都有复现与验证数据 → [docs/pdf-upload-fixes.md](docs/pdf-upload-fixes.md) |
 | 新流水线 | `pipeline/html2note.js`：HTML → PDF → 云笔记，含 `--watch` 常驻、`--check-cloud` 巡检、自动续期登录 |
 | 新流水线 | `pipeline/scripts/pipeline.py` + `pipeline/tools/answer-pipeline/`：读题作答 → 渲染 → 校验 → 发布 |
-| 安全 | **删除全部 AES 主密钥常量**（见下节），域名 / 桶名 / 账号脱敏 |
+| 安全 | **领创 KEY/IV 不出现在仓库里**（中育种子与上游一致，已内置），账号凭据不入库 |
 | 文档 | `docs/`、`sample/` 与这份 README 均为新增 |
 
 逐条变更见 [CHANGELOG.md](CHANGELOG.md)。
 
-### 关于 AES 主密钥
+### 关于 AES 密钥
 
-上游把 AES 主密钥直接写在脚本里（`index.js` / `pdf-upload.js` / `chem.js` 的 codeUtils 种子串，以及 `linspirer.js` 的 KEY/IV）。公开仓库里保留这些常量，等于把「解开流量」的能力一起发布出去，所以：
+上游把密钥直接写在脚本里。本仓库分两类处理：
 
-- 常量已全部删除，改为运行时读取 `window.CODE_UTILS_SEED` / `window.LINSPIRER_KEY` / `window.LINSPIRER_IV`；
-- 取值放在 `web-toolbox/config.local.js`（**已在 .gitignore 中**），由 `key-store.js` 读取；未配置时相关功能会抛出明确错误，而不是静默算出乱码；
-- 模板见 `web-toolbox/config.local.example.js`，细节见 [docs/keys.md](docs/keys.md)；
-- 如果你的副本里曾经提交过这些常量，请让服务端轮换密钥。
+- **中育 codeUtils 种子**（`index.js` / `chem.js` / `pdf-upload.js` 加密请求体用的那把）：与上游公开仓库完全一致，已经**内置**在 `web-toolbox/key-store.js`，克隆下来即可登录，不需要额外配置。
+- **领创（Linspirer）KEY / IV**：仓库**不提供**，需要你自己从所连接的领创环境中取得，写在 `web-toolbox/config.local.js`（**已在 .gitignore 中**）。没配置时领创模块会抛出明确提示，其它功能不受影响。
+
+```bash
+cp web-toolbox/config.local.example.js web-toolbox/config.local.js
+# 只填 LINSPIRER_KEY / LINSPIRER_IV 即可
+```
+
+细节见 [docs/keys.md](docs/keys.md)。
+
+### 关于域名与学校信息
+
+本仓库**不脱敏**：`index.js` 等文件里写的是真实接口地址（学校 API 主机、OSS 桶、中转服务器等），目的是「克隆下来就能跑」。
+
+这意味着：
+
+- 里面出现的学校代码、接口域名属于学校自有信息，请在**自用或小范围分享**的前提下使用；
+- 如果你打算公开分发，建议自己再脱敏一遍（发布版曾提供 `build-repo.js` 的替换规则，见 [docs/sanitization.md](docs/sanitization.md)）；
+- 领创的 KEY/IV 与任何账号凭据都**不在**仓库里，这一点没有妥协。
 
 ## 两条链
 
@@ -57,7 +72,7 @@
 
 | 路径 | 内容 |
 | --- | --- |
-| `web-toolbox/` | 网页工具箱：`index.html`、`index.js` 与 6 个扩展模块、pdf.js 与模板、`example/`、`web/` |
+| `web-toolbox/` | 网页工具箱：`index.html`、`index.js` 与 6 个扩展模块、pdf.js 与模板、`fabric.min.js`（内置，不再依赖 CDN）、`example/`、`web/` |
 | `web-toolbox/serve.js` | 本地静态服务 + 同源转发：`/proxy/`（图片）、`/linspirer/`（领创 JSON-RPC 与 APK 下载，支持断点续传） |
 | `启动云笔记工具.bat` | Windows 一键启动：8088 服务 + 9222 调试 Chrome + 云笔记 watch；`/dry` 只打印动作 |
 | `pipeline/html2note.js` | HTML → PDF → 云笔记，支持 `--watch` 常驻与 `--check-cloud` |
@@ -75,7 +90,11 @@
 # 领创模块必须用它，普通静态服务器没有 POST 转发，会直接 404/405
 node web-toolbox/serve.js 8088
 # 另开一个带调试端口的 Chrome
+# --no-proxy-server 必须加：系统里若有残留代理（如 Clash 的 127.0.0.1:7890），
+# 代理一旦不在运行，页面内所有外网请求都会 Failed to fetch；而 127.* 在代理
+# 绕过名单里，本地页面看起来完全正常，很容易误判成"只是浏览器坏了"。
 chrome --remote-debugging-port=9222 \
+       --no-proxy-server \
        --user-data-dir="<你的临时 profile>" \
        http://127.0.0.1:8088/
 ```
@@ -123,6 +142,7 @@ input/      从云端下载回来的笔记目录
 - 网页工具箱依赖校内平台的接口与网页结构，平台改版即可能失效；
 - PDF 上传**默认本地渲染**（pdf.js 2880×1800），服务端 `<pdf2img-host>` 仅作兜底；
 - 自动朝向判定只覆盖有文字层的页面，纯图片页需要人工逐页旋转；
+- 调试 Chrome **必须带 `--no-proxy-server` 启动**：系统里残留的代理配置（如 Clash 的 `127.0.0.1:7890`）一旦不在运行，页面内所有外网请求都会 `Failed to fetch`，而 `127.*` 在代理绕过名单里，本地页面看起来完全正常，极易误判成"只有浏览器坏了"。`启动云笔记工具.bat` 已内置该参数，手动启动请照抄上面的命令；
 - 没有 UI 自动化回归测试，验证靠脚本探测（见 `docs/pdf-upload-fixes.md` 的验证方法）。
 
 ## 免责声明

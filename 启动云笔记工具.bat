@@ -20,10 +20,13 @@ rem ============================================================
 
 set "REPO_DIR=%~dp0"
 set "SERVE_SCRIPT=%REPO_DIR%web-toolbox\serve.js"
-rem  The repo copy of pipeline/ is a sanitized sample. If your real HTML-to-note
-rem  pipeline lives elsewhere, point WATCH_DIR at it, for example:
-rem    set "WATCH_DIR=D:\my\pipeline"
-set "WATCH_DIR=%REPO_DIR%pipeline"
+rem  Real HTML-to-note pipeline (it keeps its own config.json + input/output).
+rem  Auto-detected: the first folder under PIPELINE_ROOT that contains
+rem  html2note.js. Edit PIPELINE_ROOT if your pipeline lives elsewhere.
+set "PIPELINE_ROOT=E:\WorkBuddy"
+set "WATCH_DIR="
+for /d %%D in ("%PIPELINE_ROOT%\*") do if not defined WATCH_DIR if exist "%%~fD\html2note.js" set "WATCH_DIR=%%~fD"
+if not defined WATCH_DIR set "WATCH_DIR=%REPO_DIR%pipeline"
 set "CHROME=%ProgramFiles%\Google\Chrome\Application\chrome.exe"
 set "PROFILE=%TEMP%\zhongyu-toolbox-chrome-prof"
 set "DRY="
@@ -56,7 +59,12 @@ rem ---------- 2. chrome debug ----------
 netstat -ano | findstr /R /C:"127.0.0.1:9222 .*LISTENING" >nul
 if errorlevel 1 (
     echo [start] chrome debug instance ...
-    if not defined DRY start "" "%CHROME%" --remote-debugging-port=9222 --user-data-dir="%PROFILE%" --no-first-run --no-default-browser-check --window-size=1440,960 http://127.0.0.1:8088/
+    rem  --no-proxy-server is required: if a leftover system proxy is configured
+    rem  (e.g. Clash on 127.0.0.1:7890) and the proxy is not running, every
+    rem  outbound request inside the page fails with "Failed to fetch", while
+    rem  the 127.* bypass rules keep localhost working - looking like only the
+    rem  browser is broken. Forcing a direct connection avoids that trap.
+    if not defined DRY start "" "%CHROME%" --remote-debugging-port=9222 --user-data-dir="%PROFILE%" --no-proxy-server --no-first-run --no-default-browser-check --window-size=1440,960 http://127.0.0.1:8088/
     if defined DRY echo        DRY: chrome --remote-debugging-port=9222 --user-data-dir="%PROFILE%"
     ping -n 6 127.0.0.1 >nul
 ) else (
@@ -80,9 +88,10 @@ if errorlevel 1 (
 echo.
 echo ------------------------------------------------------------
 echo server  : http://127.0.0.1:8088
-echo log     : pipeline\logs\watch-YYYY-MM-DD.log
-echo watch   : pipeline\output   new html becomes pdf becomes cloud note
-echo download: pipeline\input
+echo pipeline: %WATCH_DIR%   (html2note.js + config.json)
+echo watch   : %WATCH_DIR%\output   new html becomes pdf, then uploaded
+echo pdf     : %WATCH_DIR%\pdf
+echo log     : %WATCH_DIR%\logs
 echo ------------------------------------------------------------
 echo.
 echo You can close this window; each task runs in its own window.

@@ -2,9 +2,159 @@
 
 按日期倒序。每个条目都能在 `docs/` 里找到对应的复现步骤或验证数据。
 
+## 2026-11-17 — 上传/云笔记成批失败：强制调试 Chrome 直连
+
+现象：连续出现「OSS 上传失败（16/16）」与「云笔记巡检 fetch failed」，但同一台机器上本地页面（127.0.0.1:8088）一切正常，curl / Node 直连 OSS 也都返回 200，很容易误判成 DNS 或 OSS 侧故障。
+
+根因是**系统代理**：注册表残留 `ProxyServer = 127.0.0.1:7890`（Clash 的默认混合端口），`ProxyOverride` 含 `127.*`、`10.*`、`192.168.*` 等绕过项。代理软件不在运行时，Chrome 仍按系统代理配置出网，页面内所有外网请求（OSS PUT、云笔记 API）全部连不上；而本地 8088 命中绕过名单始终可用，Node 与 curl 又根本不读系统代理，最终表现成"只有浏览器坏了"。
+
+复现与验证：
+
+| 调试 Chrome 配置 | 访问 OSS | 访问 127.0.0.1:8088 |
+| --- | --- | --- |
+| `--proxy-server=127.0.0.1:7890`（死端口） | `Failed to fetch` | OK 200 |
+| `--no-proxy-server` | OK 200 | OK 200 |
+
+改动：
+
+- `启动云笔记工具.bat`：启动调试 Chrome 时增加 `--no-proxy-server`，不再依赖系统代理设置（脚本保持纯 ASCII 的约定不变）；
+- `web-toolbox/pdf-upload.js` 的 `uploadMany()`：网络类错误（`Failed to fetch` / `NetworkError` / `ERR_*`）且整批全失败时，等 2 秒**整批重试一次**——并发 6 个请求会同时撞上同一故障，逐个重试没有意义；仍失败则在错误信息后追加代理排查提示，避免下次再从 DNS 查起；
+- `README.md`：快速开始的手动启动命令补 `--no-proxy-server`，「已知限制」补充该约束。
+
+## 2026-11-16 — 控制台输出带时间
+
+原来只有写进文件的日志带 `[YYYY-MM-DD HH:MM:SS]`，CMD 窗口里是裸文本，盯窗口时看不出每轮是什么时候跑的。
+
+- `runWatch()` 里的 console 包装增加 `[HH:MM:SS]` 前缀（`clock()`），文件仍由 `appendLog` 写完整日期，两边信息量不变。
+- 实测：控制台 `[20:46:40] [云笔记] 无变化…`，文件 `[2026-11-16 20:46:40] [云笔记] 无变化…`。
+
+## 2026-11-16 — 修正云笔记巡检节拍（配置 10 秒实际跑成 20 秒）
+
+现象：`config.json` 写 `cloud.intervalMs: 10000`，启动日志也打印「每 10 秒一轮」，但日志里两轮间隔稳定是 **20 秒**（当天 2242 个间隔里 2121 个正好 20 秒）。
+
+根因是间隔被算了两次：
+
+```js
+cloudTimer = setInterval(fn, CLOUD_INTERVAL);                    // 10s 跳一次
+cloudNextAt = Date.now() + CLOUD_INTERVAL;                       // 结束时再加 10s
+```
+
+定时器下一次触发永远刚好差一点点（`now < end + 10s`），只能顺延到下下个 tick，于是稳定翻倍。
+
+- 定时器改为 **1 秒一跳**，是否开跑完全由 `cloudNextAt` 决定；
+- `cloudNextAt` 改成「**本轮开始时刻** + 间隔」（限流退避时才用「现在 + 退避」）。
+
+实测（隔离目录、无头 Chrome、真实页面）：`intervalMs=5000` → 5 个间隔全部 5 秒；`intervalMs=10000` → 5 个间隔全部 10 秒。生产配置仍是 10000，重启 watch 后即为真正的 10 秒一轮。
+
+## 2026-11-14 — 转换阶段少打一遍 PDF（-2.9s/文件）
+
+上传并发生效后（2 页 15.2/27.6 s → **11.3 s**），瓶颈转到转换：日志里 `[转换] … 5321ms`，但单跑 `printToPDF` 只要 0.5–1.2 s。
+
+根因在打印循环：`for (; tries < 3; tries++)` 里，长题干本来就会「1 个题块排成 2 页」，`okPages()` 的严格相等永远不成立，于是**白跑一轮** `sleep(250) + printToPDF + sleep(700)`，最后才走「多页也算过」的分支。
+
+- 改为：只有 **页数比预期少**（真丢内容）才补打，`pages >= expectPages` 直接接受。最多 2 次，退避 400 ms。
+- 实测同一份文件：`5321 ms → 2413 ms`。
+- 上传并发 3 → 6（令牌已按笔记缓存，PUT 是直连阿里云，不会打到 `GenerateToken`）。2 页 32 个对象从约 11 批降到 6 批。
+
+## 2026-11-14 — STS 令牌缓存：并发上传打爆 GenerateToken
+
+并发上传上线后暴露出真正的限流点：**每传一个对象就调一次 `ObjectStorage/GenerateTokenV2Async`**（16 次/页）。串行时被摊开到 10 秒里没问题，改成并发后瞬间打出 3–5 个令牌请求，服务端直接 503：
+
+```
+获取 token 失败: {"code":503,"msg":"您的操作太频繁了，请稍后再试"}
+OSS 上传失败（11/16）：…/a2b4fb47-…_file.bin
+```
+
+- `index.js` 的 `uploadFile()` 增加 STS 令牌缓存（`__ossTokenCache`，TTL 10 分钟）。缓存键 = 账号 token 尾部 + `fc` + **nonce**：STS 策略是围着这次 nonce（= 笔记的 customFileId）签的，带上它才能跨对象复用而不会 AccessDenied。效果：一篇笔记从 16 次令牌请求降到 **1 次**。
+- `pdf-upload.js` 并发度 5 → 3，避免首轮突发。
+
+## 2026-11-14 — 限流退避：5 秒巡检被 503，改 10 秒
+
+把云笔记巡检改到 5 秒后，首次真实上传就撞了服务端限流：
+
+```
+[失败-上传] 20261114194509_ds_29_...  错误: GetAll 返回异常:
+{"code":503,"msg":"您的操作太频繁了，请稍后再试"}
+```
+
+- 巡检间隔 **5 s → 10 s**（`CLOUD_INTERVAL` 默认与 `config.json` 的 `cloud.intervalMs` 同步改成 10000）。5 秒等于每分钟 12 次 `GetAll`，这个接口扛不住。
+- **限流不再算失败**：新增 `withApiRetry()`，`GetAll` 命中 `操作太频繁 / 503 / 429` 时按 3 s→6 s→12 s 退避重试三次，上传前/上传后/巡检三处都走它。
+- **上传期间巡检避让**：上传开始打点 `__lastUploadAt`，20 秒内不再跑云笔记轮询，避免两边同时压接口。
+- **限流后自动降速**：巡检被 503 时把下一轮推迟 60 秒，而不是继续每 10 秒撞一次。
+
+## 2026-11-14 — 上传并发化 + 云笔记巡检 5 秒
+
+按实测（2 页 15.2 s / 2 页 27.6 s / 3 页 40.2 s）定位到瓶颈：`pdf-upload.js` 每页要传 16 个 OSS 对象（页面图 + 13 个模板含扁平副本 + 2 份截图），全是串行 `await`，每次 0.5–0.9 s。
+
+- **上传并发化**：新增 `uploadMany()`（默认并发 5），把每页对象收集成列表后并发上传；路径、内容、resourceList 结构完全不变。合计 16 次串行 ≈ 4 批。
+- **云笔记巡检 30 s → 5 s**：原来云笔记检查挂在 30 秒的 rescan 定时器上，只改 `CLOUD_INTERVAL` 不会生效；现改为独立 `cloudTimer`，并支持 `config.json` 的 `cloud.intervalMs` 配置（两个仓库/本机配置都写了 5000）。
+- **轮询粒度 1000 → 250 ms**：缩略图就绪、上传进度两处；完成后固定 `sleep(1500)` 改为 400 ms。单个文件少等 ~2 s。
+- 渲染侧未动（`render` 3–5 s、`check` 1.8 s、`printToPDF` 0.95 s，合计占比小）。
+
+## 2026-11-14 — 去掉加载期对作者服务器的请求
+
+隐私向调整：登录已改为「填学校代码 → 直连学校 API」，但页面加载时仍会碰作者的 `*.loshop.com.cn`。这次把这三处去掉：
+
+- **专栏 / 选课 iframe 不再预加载作者域名**：`index.html` 里两个 `<iframe>` 的静态 `src` 由 `http://zyapi.loshop.com.cn/navPage.html?...` 改为 `about:blank`；点「在线专栏 / 选课」时由 `zxzl_set_url()` / `ck_set_url()` 用 `navSrc()` 现场赋值，指向当前学校的 `navPage.html`（`apiHost` 也换成当前 `API_BASE_URL`）。
+- **下载中转探活改为惰性**：`detectLocalProxy()` 原来每次加载都探一次 `zytbdownloadagent.loshop.com.cn`，现改为「只有在本地代理与同源转发都不可用、且确实需要代理时才探一次」。
+- **修掉「课表」按钮的学校硬编码**：原来写死 `sxz.school.zykj.org` + `apiHost=zyapi.loshop.com.cn`，换学校就串；改用 `window.navSrc("#/class")`，跟着当前登录学校走。
+
+实测（8088 已登录页面）：加载期请求 = 本地静态 + 同源代理 + `nswgy-api.zyai.cc` ×2 + `127.0.0.1:5005` 探活，**`loshop` 命中 0**；点「在线专栏」后 iframe 指向 `https://nswgy.zyai.cc/navPage.html?apiHost=https://nswgy-api.zyai.cc&apiToken=...`。
+
+仍会用到作者服务器的只剩「老师分享」（`zytbshareapi.loshop.com.cn`），只在主动点分享时请求，需要替代服务端才能真正去掉。
+
+## 2026-11-14 — 补齐静态资源（背景图 / 图标）
+
+**现象**：页面背景变纯白，标题栏还在但主体没有那张青色背景图。
+
+**根因**：构建脚本的 `WEB_FILES` 只列了 js / html / css，`index.html` 里按相对路径引用的 `bg3.jpg`（整页背景）、`icon.png`（favicon）、`folder.svg` / `note.svg` / `Board.svg`（列表图标）从来没被复制进发布目录。8088 返回 404，浏览器就当没有背景。
+
+- 已把这些资源补进 `web-toolbox/`，并把它们加进 `build-repo.js` 的 `WEB_FILES`，以后重建不会再漏。
+- 验证：`/bg3.jpg` 200（92 KB）、`/icon.png` 200，页面该元素的 `background-image` 解析为 `url("http://127.0.0.1:8088/bg3.jpg")` 且正常绘制；加载期 4xx 只剩一条 `fonts.googleapis.com/...`（bootswatch 里被本地化的字体 import，回退系统字体，无影响）。
+
+## 2026-11-14 — 修复跨天解密失败（页面 key 不刷新）
+
+**现象**：云笔记巡检报 `[云笔记] 本轮出错：页面异常：SyntaxError: "undefined" is not valid JSON at JSON.parse ... :5:24`，反复刷屏。
+
+**根因**：请求体 AES 的 key 由「种子串 + 当天日期」派生（`aeskey()` 里取 `new Date()`），但 `window.key` 只在页面加载时算了一次。页面开着过夜后，服务端已经换成当天的 key，页面仍用昨天的，`aesDecrypt()` 解密抛错并返回 `undefined`，紧接着 `JSON.parse(undefined)` 就报那句话。与 token、域名、网络都无关。
+
+- `index.js` / `chem.js`：新增 `window.aesKey()`，每次 `aesEncrypt` / `aesDecrypt` 前按当天重算，日期没变则复用；跨天不必刷新页面。本地修改版同步修了同一处。
+- `pipeline/html2note.js`：「本轮出错」时识别这类报错并附提示（页面 key 可能还是前一天的，刷新页面即可）。
+
+实测：刷新页面后 `GetAll` 正常解密（648 条记录，其中标题含「ds」的 30 条），巡检恢复「无变化」。
+
+## 2026-11-13（深夜）— 启动脚本改用真实流水线目录
+
+- `启动云笔记工具.bat` 原来固定监视仓库里的 `pipeline/`（样例），现在改为**自动探测** `%PIPELINE_ROOT%`（默认 `E://WorkBuddy`）下第一个含 `html2note.js` 的目录；找不到才回退到仓库样例。底部信息会打印实际监听目录。
+- 刻意**不**把中文目录名写进脚本：UTF-8 批处理里 `chcp 65001` 会让 cmd 的行读取按字节偏移错位，实测会报 `'65001' is not recognized` 与「无法初始化设备 PRN」，路径也解析不出来。自动探测既保持脚本纯 ASCII，又能命中中文目录。
+
+## 2026-11-13（晚）— 改为不脱敏：仓库直接带真实接口地址
+
+方向调整：之前为了公开分享做了脱敏，代价是克隆者必须先全局替换占位符才能登录。现改为**不脱敏**，目标是「克隆下来就能跑」。
+
+- 域名还原：`index.js`、`chem.js`、`batch_pick.js`、`share_read.js`、`column_*.js`、`pdf-upload.js`、`linspirer.js`、`serve.js` 及几个 HTML 里的占位符换回真实主机（含 OSS 桶、中转与站点域名）。共约 180 处。
+- 移除「本地还原层」：`serve.js` 不再读取 `.local/` 覆盖目录，`.gitignore` 里的对应规则一并删除。
+- **中育 codeUtils 种子改为内置**（`key-store.js` 的 `DEFAULT_CODE_UTILS_SEED`），与上游公开仓库一致，克隆后无需配置即可登录；需要连别的服务端时仍可用 `config.local.js` 覆盖。
+- **领创 KEY / IV 仍然不提供**：`key-store.js` 只保留读取与校验，未配置时抛明确提示；`config.local.example.js`、`docs/keys.md`、README 均已注明「需自己取得」。这类凭据进 git 历史即永久有效，不做妥协。
+- 登录页改造：原来「学校」下拉只有 `sxz` 和「其它学校」，默认走 `sxz`。现改为**只填学校代码**的输入框，登录时用代码调 `hagateway.zykj.org/api/discovery/<code>` 拿到该校 API 地址；返回 http 的少数学校仍走 https 中转映射。学校代码记忆在 `localStorage.schoolCode` 里，下次自动回填。
+- 注释中性化：删除「某代码 = 某学校」这类对照说明（如「江苏省锡中」「深圳市南山外国语」），`special` 路径相关注释改为「走中转时」。仓库里不再出现学校名称。
+- 登录失败提示改为安全渲染（学校名来自服务端，原先是 `innerHTML` 拼接）。
+
+## 2026-11-13 — 补齐脱敏与移除首屏问卷弹窗
+
+- 脱敏补全：此前有两个漏过 `build-repo.js` RULES 的真实主机（一个 OSS 桶、一个厂商上游，含 880 / 883 端口）仍留在公开仓库里。现分别替换为 `<oss-bucket>.oss-cn-hangzhou.aliyuncs.com` 与 `linspirer-host.example.com`（合法占位域名，`new URL()` 不会报错），并把两者加进 RULES 与 leftovers 残留检查；涉及 `batch_pick.js`、`chem.js`、`index.js`、`linspirer.js`、`serve.js` 等文件。按 [docs/sanitization.md](docs/sanitization.md) 的约定，这里不复述原值。
+- 首屏问卷弹窗：本仓库在 11-10 已删除（见下方记录）；这次把**本地修改版** `ZhongYuToolbox-main/index.html` 里 `body` 开头整段 6.6 KB 的 IndexedDB + `surveyModal` 脚本一并删除（含把 `localStorage.realName` 拼进外部问卷地址、`survey_completed` 消息监听）。发布版复核无残留，页面里的「调查问卷」只是学科下拉选项，未改动。
+- 运行提示：`linspirer-host.example.com` 是占位符，使用领创模块前需替换回真实上游（可直接放 `.local/upstream.txt`，见下方「本地还原层」）；其余 `<api-host>` / `<oss-bucket>` 同理。
+- **修复 `serve.js` 无法启动**：文件头注释块里混进了一行 `console.log("领创转发 ..." + PORT + ...)`（早前生成发布版时误插），导致 `ReferenceError: Cannot access 'PORT' before initialization`，服务直接退出。已删除该行，启动日志统一由 `listen` 回调打印。实测 `node web-toolbox/serve.js 8089` → `/linspirer/ping` 返回 pong、首页 200。
+- **修复页面卡在加载中、无法登录**：`index.html` 第 27 行从 `cdnjs.cloudflare.com` 拉 `fabric.js` 是**阻塞式** `<script>`，该 CDN 不可达时整个解析停在这里，后面的 `index.js` / `linspirer.js` 全部不执行，表现就是「登录按钮点了没反应」。现把 `fabric.min.js`（5.3.1 构建，311 KB）内置到 `web-toolbox/`，改为 `<script src="fabric.min.js?v=1">`。实测断网条件下页面 `readyState=complete`、`fabric` 正常、登录按钮可用。
+- **新增本地还原层**：`serve.js` 现在会优先发送 `web-toolbox/.local/` 下的同名文件（该目录已 gitignore）。把占位符换回真实域名的同名文件放进去，就能用同一份仓库代码在本机跑通登录，而提交上去的仍然是脱敏版；领创上游可另由 `.local/upstream.txt` 或环境变量 `LINSPIRER_UPSTREAM` 覆盖。启动时会打印「本地还原层：已启用」。
+- **补齐 `update.json`**：页面启动会 `fetch('update.json')` 弹更新日志，但构建脚本的 `WEB_FILES` 一直漏了这个文件，发布版里是 404（控制台报「无法加载更新日志」）。已加入仓库并补进 `build-repo.js` 的文件清单。
+- **Bootstrap 5 与 jQuery 插件不匹配**：仓库内置的是 Bootstrap 5.1.3（原生 JS，没有 `$.fn.modal`），而 `index.js` 里还有 22 处 `$(sel).modal('show'/'hide')`。其中一句在顶层执行，抛 `TypeError: $(...).modal is not a function` 会中断后续初始化（分享弹窗回调等绑不上）。已在 `index.js` 顶部加一个最小适配层，缺插件时转调 BS5 原生 API（modal/tab/collapse/tooltip/popover/carousel），不再抛错。
+- **移除百度统计**：`index.html` 里 `hm.baidu.com` 的埋点脚本整段删除（本地修改版与发布版同步），页面现在不再向第三方发送访问数据。
+
 ## 2026-11-12 — 领创模块 405：中转域名停用，改走本地同源转发
 
-**修复**：网页版点「登录并获取应用」报 `操作失败: HTTP 405:`。原公网中转域名已复用为「GForm 授权管理」站，nginx 只允许 `OPTIONS, GET`，POST 返回 405 `{"message":"Method Not Allowed"}`；真实上游 `https://cloud.linspirer.com:883/public-interface.php` 仍接受 POST（返回业务 JSON），但不返回 CORS 头，浏览器无法直连。
+**修复**：网页版点「登录并获取应用」报 `操作失败: HTTP 405:`。原公网中转域名已复用为「GForm 授权管理」站，nginx 只允许 `OPTIONS, GET`，POST 返回 405 `{"message":"Method Not Allowed"}`；真实上游 `https://linspirer-host.example.com:883/public-interface.php` 仍接受 POST（返回业务 JSON），但不返回 CORS 头，浏览器无法直连。
 
 - 本地静态服务 `.work/serve.js` 新增 `/linspirer/<path>` 同源转发：保留 POST body 与 `Content-Type` 转发到上游，带 CORS、超时、16 MB 上限、最多 3 跳重定向跟随，目标 host 固定以避免变成开放代理；`/linspirer/ping` 用于探活。
 - `web-toolbox/linspirer.js` 与本地版 `ZhongYuToolbox-main/linspirer.js`：默认端点改为 `/linspirer/public-interface.php`，保留直连上游作备用；链路级失败自动换端点，业务错误（`code != 0`）不重试；错误信息带上排查指引。`proxyUrl()` 的图标/下载链接随之映射到同源路径。
