@@ -35,6 +35,25 @@ README 同步：目录表新增该文档；「两条链」一节补充「作答�
 - `web-toolbox/pdf-upload.js` 的 `uploadMany()`：网络类错误（`Failed to fetch` / `NetworkError` / `ERR_*`）且整批全失败时，等 2 秒**整批重试一次**——并发 6 个请求会同时撞上同一故障，逐个重试没有意义；仍失败则在错误信息后追加代理排查提示，避免下次再从 DNS 查起；
 - `README.md`：快速开始的手动启动命令补 `--no-proxy-server`，「已知限制」补充该约束。
 
+## 2026-11-18 — 修复随身答图片全部加载失败（Referer 防盗链）
+
+**现象**：随身答（答疑）列表卡片与「问题详情」弹窗的图片全裂，只剩浏览器默认的破损图标；同一页面里本地图标（`default-avatar.svg`、`folder.svg`）正常。
+
+**定位过程**
+
+1. 页面内统计：293 个 `<img>` 中 21 个 `naturalWidth === 0`，失败地址全是 `http://nswgy-alicdn.zyai.cc/quora_v2/res/...png`。
+2. curl 直连该地址 → `200 image/png 515 KB`；**加上 `Referer: http://127.0.0.1:8088/` 后 → `403 text/html`**。
+3. 页面内 `new Image()` 加载同一地址 → `onerror`，与 `<img>` 表现一致（页面自身 CSP 为空、无 `referrerpolicy` 设置）。
+
+**根因**：阿里云 CDN 开了**防盗链白名单**，只放行学校域名等 Referer；页面跑在 `127.0.0.1:8088`，浏览器给每个 `<img>` 带上这个 Referer，于是全部被 403。跟路径拼接、缓存、权限都无关——curl 不带 Referer 就能拿到图。
+
+**修复**
+
+- `index.html` / `chem.html` 头部加 `<meta name="referrer" content="no-referrer">`：整个文档的子资源请求不再发 Referer，CDN 放行；实测接口调用（`Task/GetStudentTaskListAsync` 等）不受影响。
+- `proxyImgSrc('')` 返回一张内联 SVG「该题目没有配图」占位：没有配图的问题不再显示裂图标。
+
+**验证**：同一页面刷新后 `broken: 21 → 0`；`new Image()` 加载同一张图 `naturalWidth = 1921`；问题详情弹窗大图正常；列表头像、卡片截图（含手写照片）全部显示。
+
 ## 2026-11-18 — 测评阅读体验：答案徽标 / 快捷对答案 / 起止时间
 
 新增 `web-toolbox/answer-view.js`（index.html 与 chem.html 都挂载），三处改动：

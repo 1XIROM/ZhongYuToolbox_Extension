@@ -168,7 +168,15 @@
         return base.endsWith('/') ? base + url : base + '/' + url;
     };
     window.proxyImgSrc = (url) => {
-        if (url && typeof url === 'string' && url.startsWith('http://sxz.alicdn.zykj.org/')) {
+        // 空值：给一张「无图」占位，别让浏览器显示裂图标
+        if (!url || typeof url !== 'string' || !url.trim()) {
+            return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
+                '<svg xmlns="http://www.w3.org/2000/svg" width="240" height="140">'
+                + '<rect width="100%" height="100%" fill="#f1f3f5" stroke="#dee2e6"/>'
+                + '<text x="50%" y="50%" fill="#adb5bd" font-size="14" font-family="sans-serif" '
+                + 'text-anchor="middle" dominant-baseline="middle">\u8be5\u9898\u76ee\u6ca1\u6709\u914d\u56fe</text></svg>');
+        }
+        if (url.startsWith('http://sxz.alicdn.zykj.org/')) {
             return url.replace('http://sxz.alicdn.zykj.org/', 'https://ezy-sxz.oss-cn-hangzhou.aliyuncs.com/');
         }
         // <img> 不受 CORS 限制，图片一律走直链（中转已死，绕开它）
