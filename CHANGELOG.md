@@ -35,6 +35,22 @@ README 同步：目录表新增该文档；「两条链」一节补充「作答�
 - `web-toolbox/pdf-upload.js` 的 `uploadMany()`：网络类错误（`Failed to fetch` / `NetworkError` / `ERR_*`）且整批全失败时，等 2 秒**整批重试一次**——并发 6 个请求会同时撞上同一故障，逐个重试没有意义；仍失败则在错误信息后追加代理排查提示，避免下次再从 DNS 查起；
 - `README.md`：快速开始的手动启动命令补 `--no-proxy-server`，「已知限制」补充该约束。
 
+## 2026-11-18 — 让 clone 下来就能直接跑
+
+以 `git archive HEAD` 导出（等同新克隆）实测，修掉这些「clone 即废」的点：
+
+| 类别 | 问题 | 处理 |
+| --- | --- | --- |
+| 阻断 | `serve.js` 第 4 行有一句误插进注释的 `console.log(...PORT...)`，在 `const PORT` 之前 | 删除，服务正常启动 |
+| 阻断 | `index.html` 引用的 `bg3.jpg` / `icon.png` / `fabric.min.js` / 三个 svg / `update.json` 不在仓库 | 全部入库（fabric 不再走 cdnjs） |
+| 功能 | `index.js` 等仍有 23 处 `<relay-host>` 占位符 | 换回真实地址，学校代码登录可发现 API 主机 |
+| 功能 | `config.local.js` 被 `index.html` 引用但仓库不提供 | `key-store.js` 内置中育种子；该文件变成只对「领创」必填，缺失只留一条 404 |
+| 平台 | 只有 Windows 的 `.bat` | 新增 `start.sh`（`--watch/--status/--stop`，容器自动带 `--no-sandbox` 等） |
+| 平台 | 没声明 Node 版本要求 | 新增 `package.json`（`engines: node>=21`，全局 `WebSocket` 需要） |
+| 文档 | README 没写「装什么、跑哪条命令」 | 补三步启动；说明 `config.local.js` 可选 |
+
+验证（HEAD 导出 + 无头 Chrome）：标题正常、学校代码输入框在、`aesEncrypt` 已挂载、`fabric` 可用、种子 60 字符、背景图 200；剩余 404 只有 `fonts.googleapis.com`（上游 CSS 的历史遗留）与 `config.local.js`（预期）。
+
 ## 2026-11-16 — 控制台输出带时间
 
 原来只有写进文件的日志带 `[YYYY-MM-DD HH:MM:SS]`，CMD 窗口里是裸文本，盯窗口时看不出每轮是什么时候跑的。
