@@ -78,6 +78,8 @@ cp web-toolbox/config.local.example.js web-toolbox/config.local.js
 | `web-toolbox/` | 网页工具箱：`index.html`、`index.js` 与 6 个扩展模块、pdf.js 与模板、`fabric.min.js`（内置，不再依赖 CDN）、`example/`、`web/` |
 | `web-toolbox/serve.js` | 本地静态服务 + 同源转发：`/proxy/`（图片）、`/linspirer/`（领创 JSON-RPC 与 APK 下载，支持断点续传） |
 | `启动云笔记工具.bat` | Windows 一键启动：8088 服务 + 9222 调试 Chrome + 云笔记 watch；`/dry` 只打印动作 |
+| `start.sh` | Linux / macOS 一键启动（同上，容器里自动带 `--no-sandbox` 等）；`--watch` / `--status` / `--stop` |
+| `package.json` | 只声明 `engines: node >= 21` 与几个 `npm run` 快捷方式，无第三方依赖 |
 | `pipeline/html2note.js` | HTML → PDF → 云笔记，支持 `--watch` 常驻与 `--check-cloud` |
 | `pipeline/scripts/pipeline.py` | 另一条流水线的调度脚本（扫描 / 队列 / 校验 / 发布） |
 | `pipeline/tools/answer-pipeline/` | 「读题作答 → HTML」Python 包（含 KaTeX 资源与单元测试） |
@@ -86,6 +88,21 @@ cp web-toolbox/config.local.example.js web-toolbox/config.local.js
 | `sample/` | 一份脱敏后的输入（笔记页图）与输出（答案 HTML）示例 |
 
 ## 快速开始
+
+先确认 **Node >= 21**（`pipeline/html2note.js` 用了全局 `WebSocket`，Node 20 及以下会报 `WebSocket is not defined`）。之后三步：
+
+```bash
+git clone https://github.com/1XIROM/ZhongYuToolbox_Extension.git
+cd ZhongYuToolbox_Extension
+
+# Windows：双击 启动云笔记工具.bat
+# Linux / macOS：
+chmod +x start.sh && ./start.sh          # 加 --watch 则连常驻流水线一起起
+
+# 浏览器会打开 http://127.0.0.1:8088/ —— 填学校代码 + 账号密码登录
+```
+
+`config.local.js` **不是必需的**：中育链路用的种子已内置在 `web-toolbox/key-store.js`，缺这个文件只会在控制台留一条 404，并且「领创」模块会提示缺少 KEY/IV。要跑领创再按 [docs/keys.md](docs/keys.md) 建一份。
 
 ### 1. 网页工具箱
 

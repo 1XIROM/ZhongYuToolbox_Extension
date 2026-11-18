@@ -35,3 +35,6 @@ Thumbs.db
 
 # 本地密钥（含 AES 主密钥），绝不入库
 web-toolbox/config.local.js
+
+# start.sh 运行时目录（chrome profile / pid / 日志）
+.runtime/

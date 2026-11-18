@@ -1,33 +1,83 @@
 (() => {
-    window.API_BASE_URL = localStorage.getItem("apiBaseUrl") || "https://<relay-host>";
-    window.API_BASE_BASE_URL = localStorage.getItem("apiBaseOrigin") || "https://<relay-host>";
-    // 旧中转 https://zytbdownloadagent.example.com/download/ 已失效（见下方 proxyUrl 注释），
+    // Bootstrap 5 不再自带 jQuery 插件，页面里仍保留 $(sel).modal('show') 这类旧写法；
+    // 这里补一个最小适配层：缺插件时转调 BS5 原生 API，避免 TypeError 打断后面的初始化。
+    (function () {
+        if (!window.jQuery || typeof bootstrap === "undefined") return;
+        var map = { modal: "Modal", tab: "Tab", collapse: "Collapse", tooltip: "Tooltip", popover: "Popover", carousel: "Carousel" };
+        Object.keys(map).forEach(function (fn) {
+            if (jQuery.fn[fn]) return;
+            jQuery.fn[fn] = function (action) {
+                var Klass = window.bootstrap[map[fn]];
+                return this.each(function () {
+                    if (!Klass) return;
+                    var inst = Klass.getOrCreateInstance ? Klass.getOrCreateInstance(this) : new Klass(this);
+                    if (typeof action === "string" && typeof inst[action] === "function") inst[action]();
+                });
+            };
+        });
+    })();
+    // 头像兜底：旧版本把默认头像指向第三方 CDN（anilist.co），这里统一改回本地资源
+    function avatarSrc() {
+        var p = "";
+        try { p = localStorage.getItem("photo") || ""; } catch (e) {}
+        if (!p || /anilist\.co/.test(p)) return "default-avatar.svg";
+        return p;
+    }
+    // 直连学校开关（2026-11-15）：默认把主 API 指向学校源站，不再经作者服务器中转。
+    // 一键回退：控制台执行 localStorage.setItem("useSchoolDirect","0") 后刷新。
+    window.SCHOOL_DIRECT = localStorage.getItem("useSchoolDirect") !== "0";
+    window.SCHOOL_API_BASE = "http://sxz.api.zykj.org";
+    window.RELAY_API_BASE = "https://zyapi.loshop.com.cn";
+    // 迁移：已登录浏览器可能存着旧的中转地址，直连模式下换回对应学校源站。
+    // 若用户手动设了别的学校地址，则原样保留（不做覆盖）。
+    (function () {
+        var back = {
+            "https://zyapi.loshop.com.cn": "http://sxz.api.zykj.org",
+            "https://zyapi-sxzsyxx.loshop.com.cn": "http://sxzsyxx.api.zykj.org",
+            "https://zyapi-bjbsz.loshop.com.cn": "http://bjbsz.api2.zykj.org"
+        };
+        var schoolHosts = ["http://sxz.api.zykj.org",
+            "http://sxzsyxx.api.zykj.org", "http://bjbsz.api2.zykj.org"];
+        ["apiBaseUrl", "apiBaseOrigin"].forEach(function (k) {
+            try {
+                var v = localStorage.getItem(k);
+                if (!v) return;
+                if (window.SCHOOL_DIRECT && back[v]) {
+                    localStorage.setItem(k, back[v]);          // 旧中转地址 -> 学校源站
+                } else if (!window.SCHOOL_DIRECT &&
+                        schoolHosts.indexOf(v.replace(/\/+$/, "")) >= 0) {
+                    localStorage.removeItem(k);                 // 回退：清掉学校地址，让默认值生效
+                }
+            } catch (e) { /* localStorage 不可用时忽略 */ }
+        });
+    })();
+    window.API_BASE_URL = localStorage.getItem("apiBaseUrl")
+        || (window.SCHOOL_DIRECT ? window.SCHOOL_API_BASE : window.RELAY_API_BASE);
+    window.API_BASE_BASE_URL = localStorage.getItem("apiBaseOrigin")
+        || (window.SCHOOL_DIRECT ? window.SCHOOL_API_BASE : window.RELAY_API_BASE);
+    // 旧中转 https://zytbdownloadagent.loshop.com.cn/download/ 已失效（见下方 proxyUrl 注释），
     // 先留空；detectLocalProxy 探活后会填成 本地代理 / 仍存活的中转 / 空串。
     window.proxyBaseUrl = "";
-    window.SHARE_SERVER = localStorage.getItem("shareServer") || "https://zytbshareapi.example.com";
+    window.SHARE_SERVER = localStorage.getItem("shareServer") || "https://zytbshareapi.loshop.com.cn";
     // 在线专栏 iframe 的宿主页面。
-    // 历史：https://<relay-host>/navPage.html —— 已 404（平台下线该页）。
-    // 学校域名 http://sxz.school.example.com/navPage.html 仍 200，但它的 Referer 不在
+    // 历史：https://zyapi.loshop.com.cn/navPage.html —— 已 404（平台下线该页）。
+    // 学校域名 http://sxz.school.zykj.org/navPage.html 仍 200，但它的 Referer 不在
     // CDN 白名单里（column_v2 资源实测 403 denied by Referer ACL）。
     // CDN 实测允许：不带 Referer、*.example.com 家族。
-    // 真实 SPA 壳在 https://example-school.example.com/ —— 实测 200，且没有 X-Frame-Options / CSP frame-ancestors，
+    // 真实 SPA 壳在 https://nswgy.zyai.cc/ —— 实测 200，且没有 X-Frame-Options / CSP frame-ancestors，
     // 可以直接被 iframe 嵌入（自绘一份本地壳反而会丢路由和登录态）。
     // 默认嵌「资源中心 → 云笔记（个人资源）」，这一页里能直接看到老师共享过来的文件夹。
-    // 想换路由：控制台 localStorage.setItem("navPageFull", "https://example-school.example.com/#/index/resourceCenter/onlineColumns")
+    // 想换路由：控制台 localStorage.setItem("navPageFull", "https://nswgy.zyai.cc/#/index/resourceCenter/onlineColumns")
     // 想回退到本地壳：localStorage.setItem("navPageFull", "") ，再配 navPageBase。
     // 重要事实（从已安装客户端 v0.0.8 的 app.asar 里读出来的）：
     // 官方客户端的「在线专栏」并没有用新版 SPA 的 #/index/onlineColumns（那条对学生 404），
     // 而是打开老专栏页，并且用的是**老 API host**：
-    //   base = localStorage["iframeBase"] || "http://sxz.school.example.com"
+    //   base = localStorage["iframeBase"] || "http://sxz.school.zykj.org"
     //   src  = `${base}/navPage.html?apiHost=${encodeURIComponent(apiBaseUrl)}&apiToken=${token}#/list?messageType=pager`
-    //   其中 apiBaseUrl = 客户端配置里的 apiBaseUrl || "http://<api-host>"
-    // 也就是说 navPage 必须配 <api-host> 这个 host 才有数据；配 zyapi/example-school 都会空。
-    // 【事实修正】sxz 是「江苏省锡中」，example-school 是「深圳市南山外国语」。
-    // 两者的 navPage 都存在，但都必须配**自己学校**的 apiHost：
-    //   sxz   → http://sxz.school.example.com/navPage.html   + http://<api-host>
-    //   example-school → https://example-school.example.com/navPage.html        + https://<api-host>
-    // （实测：example-school.api.example.com / example-school.school.example.com 都是 404，老 host 只属于锡中。）
-    // 所以不能再硬编码 sxz —— 由当前 api host 反推 web host。
+    //   其中 apiBaseUrl = 客户端配置里的 apiBaseUrl 或默认的 api host
+    // 也就是说 navPage 必须配「当前正在使用的 api host」才有数据，换成别家的会空。
+    // 每所学校各有自己的 web host / api host 组合，两者规则并不一致（老域名只属于某一所学校），
+    // 所以这里不硬编码任何学校 —— 由当前 api host 反推 web host。
     const navWebFromApi = (api) => {
         try {
             const u = new URL(api);
@@ -60,7 +110,7 @@
         } catch (e) { return ''; }
     };
     window.NAV_PAGE_BASE = normNavPage(localStorage.getItem("navPageBase"))
-        || ((navWebFromApi(window.NAV_HOST) || "https://example-school.example.com") + "/navPage.html");
+        || ((navWebFromApi(window.NAV_HOST) || "https://nswgy.zyai.cc") + "/navPage.html");
     window.NAV_PAGE_FULL = String(window.NAV_PAGE_FULL || '').trim();
     if (window.NAV_PAGE_FULL && /navPage\.html/i.test(window.NAV_PAGE_FULL)) window.NAV_PAGE_FULL = "";
     // 统一出口：优先用真实 SPA（NAV_PAGE_FULL），否则走 navPage + 反推的 apiHost
@@ -83,11 +133,13 @@
     // 教务系统 SPA 里「云笔记」页的路由；作为云笔记的第二个入口
     window.CLOUDNOTE_HASH = "/index/resourceCenter/cloudNote?menu=dir";
     // ---------------- 中转 / 代理选择 ----------------
-    // 原公网中转 https://zytbdownloadagent.example.com/download/ 已失效：
+    // 原公网中转 https://zytbdownloadagent.loshop.com.cn/download/ 已失效：
     // 实测对任何路径都返回 200 + 405 字节的“GForm 授权管理”登录页 HTML，
     // 浏览器把它当成图片存下来，于是“下载全部图片”得到的 jpg 全都打不开。
     // 现在按 本地代理 → 公网中转 → 直链 的顺序降级，并且对下载做类型校验。
-    window.RELAY_BASE = "https://zytbdownloadagent.example.com/download/";
+    // 原公网中转已失效；两种模式下都不再向作者域名发探活请求。
+    // 需要恢复旧行为时：控制台设 useSchoolDirect=0 并手动给 window.RELAY_BASE 赋值。
+    window.RELAY_BASE = "";
     window.LOCAL_PROXY_BASE = "http://127.0.0.1:5005/proxy/";
     // 同源转发：页面本身是 http(s) 时，用它自己的 /proxy/ 转发，
     // 同源请求没有跨域问题，也不依赖 5005 那个额外进程。
@@ -116,14 +168,15 @@
         return base.endsWith('/') ? base + url : base + '/' + url;
     };
     window.proxyImgSrc = (url) => {
-        if (url && typeof url === 'string' && url.startsWith('http://sxz.alicdn.example.com/')) {
-            return url.replace('http://sxz.alicdn.example.com/', 'https://<oss-bucket>.oss-cn-hangzhou.aliyuncs.com/');
+        if (url && typeof url === 'string' && url.startsWith('http://sxz.alicdn.zykj.org/')) {
+            return url.replace('http://sxz.alicdn.zykj.org/', 'https://ezy-sxz.oss-cn-hangzhou.aliyuncs.com/');
         }
         // <img> 不受 CORS 限制，图片一律走直链（中转已死，绕开它）
         return url;
     };
     /** 探活公网中转：只有返回的不是 text/html 才算活着 */
     window.__probeRelay = async () => {
+        if (!window.RELAY_BASE) { window.__relayAlive = false; return false; }
         try {
             const r = await fetch(window.RELAY_BASE, { method: 'GET', cache: 'no-store' });
             const ct = (r.headers.get('content-type') || '').toLowerCase();
@@ -199,12 +252,23 @@
         return "".concat(a).concat(f).concat(s)
     }
 
+    // 日期派生的 key 原来只在页面加载时算一次：页面开着过夜后服务端已换成当天的 key，
+    // 页面还在用昨天的，解密必然失败（表现为 “undefined” is not valid JSON）。
+    // 这里每次加解密前按当天重算，跨天不用刷新页面。
+    window.aesKey = () => {
+        var k = CryptoJS.enc.Utf8.parse(aeskey());
+        if (!window.key || window.key.toString() !== k.toString()) {
+            window.key = k;
+        }
+        return window.key;
+    };
+
     window.key = CryptoJS.enc.Utf8.parse(aeskey()),
         window.aesDecrypt = (encryptedBase64Str) => {
             if (!encryptedBase64Str)
                 return "";
             try {
-                let decryptedData = CryptoJS.AES.decrypt(encryptedBase64Str, key, {
+                let decryptedData = CryptoJS.AES.decrypt(encryptedBase64Str, window.aesKey(), {
                     mode: CryptoJS.mode.ECB,
                     padding: CryptoJS.pad.Pkcs7
                 });
@@ -214,7 +278,7 @@
             }
         },
         window.aesEncrypt = (data) => {
-            let encryptedData = CryptoJS.AES.encrypt(data, key, {
+            let encryptedData = CryptoJS.AES.encrypt(data, window.aesKey(), {
                 mode: CryptoJS.mode.ECB,
                 padding: CryptoJS.pad.Pkcs7
             });
@@ -246,7 +310,7 @@
         } else {
             startTokenRefresh();
             $("#welc2").html(
-                `你好！<img src="${localStorage.getItem("photo")}" style="height:calc(1.425rem + 2.5vw);margin-right:2%;margin-bottom:0.5vh;">${localStorage.getItem("realName")}`
+                `你好！<img src="${avatarSrc()}" style="height:calc(1.425rem + 2.5vw);margin-right:2%;margin-bottom:0.5vh;">${localStorage.getItem("realName")}`
             );
             $("#logoutc").show();
             $("#loginc").hide();
@@ -326,7 +390,7 @@
 
 
     //     showGg(`<p><b>公告</b></p>
-    // <p>网站新域名上线：<web-host></p>
+    // <p>网站新域名上线：zytb.loshop.com.cn</p>
     // <p>QQ群：1067807011</p>
     // `);
 
@@ -596,7 +660,9 @@ async function detectLocalProxy() {
     window.__localProxyAlive = localOk;
 
     // 公网中转是否还活着（每 10 秒复查一次，它若恢复会自动用回它）
-    if (window.__relayAlive === null || (localOk === false && pageOk === false)) {
+    // 公网中转属于作者的服务器：不再每次加载都探活，只有在本地代理与同源转发都不可用、
+    // 且确实需要代理时才探一次（隐私 + 少一次外部请求）。
+    if (!localOk && !pageOk && window.__relayAlive === null) {
         await window.__probeRelay();
     }
 
@@ -1105,7 +1171,7 @@ async function loadMoreQuestions() {
                 style="cursor:pointer; background:rgba(255,255,255,0.9); box-shadow:0 2px 6px rgba(0,0,0,0.1);">
                 ${item.unRead ? '<div class="ques-unread-ribbon">未读</div>' : ''}
                 <div class="card-body d-flex align-items-center mb-2">
-                    <img src="${item.askUserPhoto || 'https://s4.anilist.co/file/anilistcdn/user/avatar/large/default.png'}" 
+                    <img src="${item.askUserPhoto || 'default-avatar.svg'}"
                         class="avatar me-2" 
                         style="width:40px;height:40px;border-radius:50%;object-fit:cover;">
                     <div class="overflow-hidden" style="white-space:nowrap;text-overflow:ellipsis;">
@@ -1435,16 +1501,30 @@ var downloading = 0,
 })
 
 
-// 学校选择切换
-function onSchoolChange() {
-    const schoolSelect = document.getElementById("school_select");
-    const schoolCodeGroup = document.getElementById("school_code_group");
-    if (schoolSelect.value === "other") {
-        schoolCodeGroup.style.display = "block";
-    } else {
-        schoolCodeGroup.style.display = "none";
-    }
+// 学校代码 → 真实 API 地址
+// 少数学校的服务端只给 http，这里交给 https 中转；其余直接用 discovery 返回的 server
+const SCHOOL_DISCOVERY_BASE = "https://hagateway.zykj.org";
+const SCHOOL_HTTP_FALLBACK = {
+    "http://sxz.api.zykj.org": "https://zyapi.loshop.com.cn",
+    "http://sxzsyxx.api.zykj.org": "https://zyapi-sxzsyxx.loshop.com.cn",
+    "http://bjbsz.api2.zykj.org": "https://zyapi-bjbsz.loshop.com.cn",
+};
+function resolveSchoolApiBase(server) {
+    const s = String(server || "").trim().replace(/\/+$/, "");
+    // 直连模式：用 discovery 返回的真实学校源站（http），不再换成作者 https 中转。
+    // 回退模式（useSchoolDirect=0）：恢复旧的 SCHOOL_HTTP_FALLBACK 映射。
+    if (window.SCHOOL_DIRECT) return s;
+    return SCHOOL_HTTP_FALLBACK[s] || s;
 }
+
+// 回填上次用过的学校代码
+document.addEventListener("DOMContentLoaded", function () {
+    const el = document.getElementById("school_code");
+    if (el && !el.value) {
+        const saved = localStorage.getItem("schoolCode");
+        if (saved) el.value = saved;
+    }
+});
 
 // 登录
 login_btn.onclick = async () => {
@@ -1458,50 +1538,41 @@ login_btn.onclick = async () => {
     let message;
     let accountVal = account.value;
     let passwordVal = password.value;
-    let schoolSelect = document.getElementById("school_select").value;
-    let schoolCode = document.getElementById("school_code").value.trim();
+    let schoolCode = (document.getElementById("school_code").value || "").trim().toLowerCase();
     let currentApiBaseUrl = window.API_BASE_URL;
-    let schoolName = "省锡中";
+    let schoolName = "";
 
-    // 处理其它学校
-    if (schoolSelect === "other") {
-        if (!schoolCode) {
-            swal("请输入学校代码");
-            $("#login_btn").prop("disabled", false);
-            $("#login_btn").text("登录");
-            return;
-        }
+    if (!schoolCode) {
+        swal("请输入学校代码");
+        $("#login_btn").prop("disabled", false);
+        $("#login_btn").text("登录");
+        return;
+    }
+    if (!accountVal || !passwordVal) {
+        swal("请输入用户名和密码");
+        $("#login_btn").prop("disabled", false);
+        $("#login_btn").text("登录");
+        return;
+    }
 
-        $("#login_btn").text("获取学校信息...");
+    $("#login_btn").text("获取学校信息...");
+    try {
+        const resp = await fetch(`${SCHOOL_DISCOVERY_BASE}/api/discovery/${encodeURIComponent(schoolCode)}`);
+        if (!resp.ok) throw new Error("code");
 
-        try {
-            const resp = await fetch(`https://hagateway.example.com/api/discovery/${schoolCode}`);
-            if (!resp.ok) throw new Error("学校代码无效");
+        const schoolInfo = await resp.json();
+        schoolName = schoolInfo.name || schoolCode;
+        currentApiBaseUrl = resolveSchoolApiBase(schoolInfo.server);
+        // 直连学校时源站是 http，允许；回退到中转时仍要求 https。
+        if (!window.SCHOOL_DIRECT && !currentApiBaseUrl.startsWith("https://")) throw new Error("http");
 
-            const schoolInfo = await resp.json();
-            schoolName = schoolInfo.name;
-            if (schoolInfo.server=="http://sxzsyxx.api.example.com") schoolInfo.server = "https://zyapi-sxzsyxx.example.com";
-            if (schoolInfo.server=="http://bjbsz.api2.example.com") schoolInfo.server = "https://zyapi-bjbsz.example.com";
-
-            // 检查 server 是否为 https
-            if (!schoolInfo.server.startsWith("https://")) {
-                swal("学校服务器环境不支持自适应登录，请联系作者");
-                $("#login_btn").prop("disabled", false);
-                $("#login_btn").text("登录");
-                return;
-            }
-
-            currentApiBaseUrl = schoolInfo.server;
-            // 更新标题显示
-            $("#welc").html(`自适应登录 - ${schoolName}`);
-        } catch (e) {
-            swal("学校代码无效或网络错误");
-            $("#login_btn").prop("disabled", false);
-            $("#login_btn").text("登录");
-            return;
-        }
-    } else {
-        // 省锡中不清空标题
+        localStorage.setItem("schoolCode", schoolCode);
+        $("#welc").text(schoolName);
+    } catch (e) {
+        swal(e.message === "http" ? "该校服务器只支持 http，暂时无法在线登录" : "学校代码无效或网络错误");
+        $("#login_btn").prop("disabled", false);
+        $("#login_btn").text("登录");
+        return;
     }
 
     // 登录获取 token
@@ -1521,7 +1592,9 @@ login_btn.onclick = async () => {
         $("#login_btn").prop("disabled", false);
         $("#login_btn").text("登录");
 
-        $("#welc").html(`自适应登录 - ${schoolName}<br><small class="text-danger">${message}</small>`);
+        $("#welc").empty()
+            .append($("<span>").text(schoolName ? schoolName + " · " : ""))
+            .append($("<small>").addClass("text-danger").text(String(message)));
     } else {
         let token = data.result.accessToken;
         let refreshToken = data.result.refreshToken;
@@ -1540,8 +1613,8 @@ login_btn.onclick = async () => {
         info = info.result;
         info["token"] = token;
 
-        if (!info.photo)
-            info.photo = "https://s4.anilist.co/file/anilistcdn/user/avatar/large/default.png";
+        if (!info.photo || /anilist\.co/.test(info.photo))
+            info.photo = "default-avatar.svg";
 
         for (let i in info) localStorage.setItem(i, info[i]);
 
@@ -1557,8 +1630,8 @@ login_btn.onclick = async () => {
         window.API_BASE_URL = currentApiBaseUrl;
         window.API_BASE_BASE_URL = currentApiBaseUrl; // 用于判断是否使用 special 路径
 
-        // 只有省锡中（非自适应）才判断教师账号
-        if (schoolSelect !== "other" && accountVal[0] !== "2") {
+        // 走 zyapi 中转登录时才判断教师账号
+        if (currentApiBaseUrl === "https://zyapi.loshop.com.cn" && accountVal[0] !== "2") {
             swal({
                 title: '提示',
                 text: '你的账号为非学生账号，功能受限(没适配)，仅可查看随身答和下载应用'
@@ -1568,7 +1641,7 @@ login_btn.onclick = async () => {
         $("#login_btn").prop("disabled", false);
         $("#login_btn").text("重新登录");
 
-        message = `你好！<img src="${localStorage.getItem("photo")}" style="height:calc(1.425rem + 2.5vw);margin-right:2%;margin-bottom:0.5vh;">${localStorage.getItem("realName")}`;
+        message = `你好！<img src="${avatarSrc()}" style="height:calc(1.425rem + 2.5vw);margin-right:2%;margin-bottom:0.5vh;">${localStorage.getItem("realName")}`;
         $("#logoutc").show();
         $("#loginc").hide();
         // 启动 token 自动刷新
@@ -1601,7 +1674,8 @@ function startTokenRefresh() {
         if (tokenExpire - now <= 10000 && now < refreshTokenExpire) {
             try {
                 let refreshToken = localStorage.getItem("refreshToken");
-                let apiBaseUrl = localStorage.getItem("apiBaseUrl") || "https://<relay-host>";
+                let apiBaseUrl = localStorage.getItem("apiBaseUrl")
+                    || (window.SCHOOL_DIRECT ? window.SCHOOL_API_BASE : window.RELAY_API_BASE);
                 let data = await fetch(`${apiBaseUrl}/api/TokenAuth/RefreshToken`, {
                     method: "POST",
                     headers: {
@@ -1897,7 +1971,7 @@ async function noteDownload(fileId, name) {
                 // 页脚
                 pdf.setFontSize(8);
                 pdf.setTextColor(100);
-                let footerText = "https://<web-host>";
+                let footerText = "https://zytb.loshop.com.cn";
                 let textWidth = pdf.getTextWidth(footerText);
                 pdf.text(footerText, pageWidth - textWidth - 20, pageHeight - 20);
 
@@ -1975,7 +2049,7 @@ async function noteDownload(fileId, name) {
                 // 页脚
                 pdf.setFontSize(8);
                 pdf.setTextColor(100);
-                let footerText = "https://<web-host>";
+                let footerText = "https://gl.zytb.loshop.com.cn";
                 let textWidth = pdf.getTextWidth(footerText);
                 pdf.text(footerText, pageWidth - textWidth - 20, pageHeight - 20);
 
@@ -2123,7 +2197,7 @@ async function noteDownload2(fileId, name) {
     this.downloading = 1;
 
     try {
-        // 路径必须和预览（noteDownload）一致：/special/ 只对省锡中中转有效，
+        // 路径必须和预览（noteDownload）一致：/special/ 只对 zyapi 中转有效，
         // 其它学校要走 CloudNotes/api/Resources/GetByFileId
         let response = await fetch(getCloudNoteApiPathR("GetByFileId", aesEncrypt("fileId=" + fileId)), {
             method: "GET",
@@ -2296,7 +2370,7 @@ window.navSpaBase = () => {
     if (window.NAV_PAGE_BASE) {
         try { return new URL(window.NAV_PAGE_BASE).origin; } catch (e) { /* 继续往下 */ }
     }
-    const web = window.navWebFromApi(window.NAV_HOST) || "https://example-school.example.com";
+    const web = window.navWebFromApi(window.NAV_HOST) || "https://nswgy.zyai.cc";
     try { return new URL(web).origin; } catch (e) { return web; }
 };
 
@@ -2390,8 +2464,8 @@ window.navLoginPage = () => {
             school = new URL(window.NAV_HOST).hostname.split(".")[0].replace(/-api$/, "");
         } catch (e) { school = ""; }
     }
-    if (!school) school = "example-school";
-    return "https://" + school + ".example.com/#/login";
+    if (!school) school = "nswgy";
+    return "https://" + school + ".zyai.cc/#/login";
 };
 
 /**
@@ -2435,17 +2509,17 @@ function ck_set_url() {
 }
 
 
-var note_link = "http:\/\/<oss-bucket>.oss-cn-hangzhou.aliyuncs.com\/1\/appstore\/云笔记_master_20240513.01_1938_1.9.38.apk";
-var test_link = "http:\/\/<oss-bucket>.oss-cn-hangzhou.aliyuncs.com\/1\/appstore\/新测评_master_20240304.01_release_215_2.1.5.apk";
-var learn_link = "http:\/\/<oss-bucket>.oss-cn-hangzhou.aliyuncs.com\/1\/appstore\/云笔记_master_20240513.01_1938_1.9.38.apk";
-var user_link = "http:\/\/<oss-bucket>.oss-cn-hangzhou.aliyuncs.com\/1\/appstore\/用户中心_master_20240426.01_release_40_2.0.15.apk";
-var mistake_link = "http:\/\/<oss-bucket>.oss-cn-hangzhou.aliyuncs.com\/1\/appstore\/错题本_master_20240326.01_57_1.0.57.apk";
-var web_link = "http:\/\/<oss-bucket>.oss-cn-hangzhou.aliyuncs.com\/1\/appstore\/浏览器_master_20240221.01_1211_1.2.11.apk";
-var chat_link = "http:\/\/<oss-bucket>.oss-cn-hangzhou.aliyuncs.com\/1\/appstore\/随身答(学生版)_master_20240326.01_release_11_1.0.11.apk";
+var note_link = "http:\/\/ezy-sxz.oss-cn-hangzhou.aliyuncs.com\/1\/appstore\/云笔记_master_20240513.01_1938_1.9.38.apk";
+var test_link = "http:\/\/ezy-sxz.oss-cn-hangzhou.aliyuncs.com\/1\/appstore\/新测评_master_20240304.01_release_215_2.1.5.apk";
+var learn_link = "http:\/\/ezy-sxz.oss-cn-hangzhou.aliyuncs.com\/1\/appstore\/云笔记_master_20240513.01_1938_1.9.38.apk";
+var user_link = "http:\/\/ezy-sxz.oss-cn-hangzhou.aliyuncs.com\/1\/appstore\/用户中心_master_20240426.01_release_40_2.0.15.apk";
+var mistake_link = "http:\/\/ezy-sxz.oss-cn-hangzhou.aliyuncs.com\/1\/appstore\/错题本_master_20240326.01_57_1.0.57.apk";
+var web_link = "http:\/\/ezy-sxz.oss-cn-hangzhou.aliyuncs.com\/1\/appstore\/浏览器_master_20240221.01_1211_1.2.11.apk";
+var chat_link = "http:\/\/ezy-sxz.oss-cn-hangzhou.aliyuncs.com\/1\/appstore\/随身答(学生版)_master_20240326.01_release_11_1.0.11.apk";
 
 function reload_note_link() {
     $.ajax({
-        url: 'https:\/\/<relay-host>\/api\/services\/app\/AppStore\/CheckUpdateAsync?packageName=com.friday.cloudsnote&version=11&appType=0',
+        url: window.API_BASE_URL + '/api/services/app/AppStore/CheckUpdateAsync?packageName=com.friday.cloudsnote&version=11&appType=0',
         type: 'get',
         // 设置的是请求参数
         data: {
@@ -2546,7 +2620,7 @@ function download_note() {
 
 function reload_test_link() {
     $.ajax({
-        url: 'https:\/\/<relay-host>\/api\/services\/app\/AppStore\/CheckUpdateAsync?packageName=com.zykj.evaluation&version=11&appType=0',
+        url: window.API_BASE_URL + '/api/services/app/AppStore/CheckUpdateAsync?packageName=com.zykj.evaluation&version=11&appType=0',
         type: 'get',
         // 设置的是请求参数
         data: {
@@ -2648,7 +2722,7 @@ function download_test() {
 
 function reload_learn_link() {
     $.ajax({
-        url: 'https:\/\/<relay-host>\/api\/services\/app\/AppStore\/CheckUpdateAsync?packageName=com.zhongyukejiao.learningexpert&version=11&appType=0',
+        url: window.API_BASE_URL + '/api/services/app/AppStore/CheckUpdateAsync?packageName=com.zhongyukejiao.learningexpert&version=11&appType=0',
         type: 'get',
         // 设置的是请求参数
         data: {
@@ -2751,7 +2825,7 @@ function download_learn() {
 
 function reload_user_link() {
     $.ajax({
-        url: 'https:\/\/<relay-host>\/api\/services\/app\/AppStore\/CheckUpdateAsync?packageName=com.zykj.manage&version=11&appType=0',
+        url: window.API_BASE_URL + '/api/services/app/AppStore/CheckUpdateAsync?packageName=com.zykj.manage&version=11&appType=0',
         type: 'get',
         // 设置的是请求参数
         data: {
@@ -2853,7 +2927,7 @@ function download_user() {
 
 function reload_mistake_link() {
     $.ajax({
-        url: 'https:\/\/<relay-host>\/api\/services\/app\/AppStore\/CheckUpdateAsync?packageName=com.zykj.mistake&version=11&appType=0',
+        url: window.API_BASE_URL + '/api/services/app/AppStore/CheckUpdateAsync?packageName=com.zykj.mistake&version=11&appType=0',
         type: 'get',
         // 设置的是请求参数
         data: {
@@ -2955,7 +3029,7 @@ function download_mistake() {
 
 function reload_web_link() {
     $.ajax({
-        url: 'https:\/\/<relay-host>\/api\/services\/app\/AppStore\/CheckUpdateAsync?packageName=com.zykj.subscriber&version=11&appType=0',
+        url: window.API_BASE_URL + '/api/services/app/AppStore/CheckUpdateAsync?packageName=com.zykj.subscriber&version=11&appType=0',
         type: 'get',
         // 设置的是请求参数
         data: {
@@ -3057,7 +3131,7 @@ function download_web() {
 
 function reload_chat_link() {
     $.ajax({
-        url: 'https:\/\/<relay-host>\/api\/services\/app\/AppStore\/CheckUpdateAsync?packageName=com.zykj.student.dialogue&version=11&appType=0',
+        url: window.API_BASE_URL + '/api/services/app/AppStore/CheckUpdateAsync?packageName=com.zykj.student.dialogue&version=11&appType=0',
         type: 'get',
         // 设置的是请求参数
         data: {
@@ -3174,7 +3248,8 @@ function reload_token() {
 }
 
 function show_class_table() {
-    window.open(proxyUrl("http:\/\/sxz.school.example.com/navPage.html?apiHost=https:\/\/<relay-host>&apiToken=" + localStorage.getItem("token") + "#\/class"));
+    // 用当前登录学校的 navPage（原来写死某校域名 + zyapi 中转，换学校就串了）
+    window.open(window.navSrc("#/class"));
 }
 
 function show_online_test() {
@@ -3830,7 +3905,7 @@ async function getUserId() {
 
 // 更新 URL 预览
 function updateUrlPreview() {
-    const prefix = window.ossBaseUrl || "https://<oss-bucket>.oss-cn-hangzhou.aliyuncs.com/";
+    const prefix = window.ossBaseUrl || "https://ezy-sxz.oss-cn-hangzhou.aliyuncs.com/";
     const fc = document.getElementById("selectFc").value;
     const userId = document.getElementById("urlUserId").textContent;
     const nonce = document.getElementById("inputNonce").value || "自动生成";
@@ -3848,6 +3923,10 @@ function ymdInTimeZone(date, tz) {
 }
 
 // 上传文件
+// OSS STS 令牌缓存（见 uploadFile 里的说明）
+var __ossTokenCache = { key: "", at: 0, result: null };
+var OSS_TOKEN_TTL_MS = 10 * 60 * 1000;
+
 async function uploadFile(file, userId, fc, nonceInput, fileNameInput) {
     const V_MAP = {
         note_v2: 1, eval_v2: 2, quora_v2: 3, mistake_v2: 4,
@@ -3872,28 +3951,40 @@ async function uploadFile(file, userId, fc, nonceInput, fileNameInput) {
     const token = localStorage.getItem("token");
     const json_data = { fc: V_MAP[fc], fr: G_MAP[fr], ft, fe, fo, nonce, ts, sign };
 
-    const resp = await fetch(`${window.API_BASE_URL}/api/services/app/ObjectStorage/GenerateTokenV2Async`, {
-        method: "POST",
-        headers: { "Accept": "application/json", "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify(json_data)
-    });
+    // STS 令牌一次上传只该换一次：原来每传一个对象就调一次 GenerateTokenV2Async，
+    // 并发上传会瞬时打出一串请求，服务端直接回 503「操作太频繁」。
+    // 这里按「账号 + 分类」缓存 10 分钟，过期再换。
+    // 缓存键带上 nonce（同一篇笔记的 customFileId）：STS 策略是围着这次 nonce 签的，
+    // 跨笔记复用会被 OSS 判 AccessDenied。这样一篇笔记只换一次令牌（16 次 → 1 次）。
+    const cacheKey = (token || "").slice(-24) + "|" + fc + "|" + nonce;
+    let result = null;
+    if (__ossTokenCache.key === cacheKey && Date.now() - __ossTokenCache.at < OSS_TOKEN_TTL_MS) {
+        result = __ossTokenCache.result;
+    } else {
+        const resp = await fetch(`${window.API_BASE_URL}/api/services/app/ObjectStorage/GenerateTokenV2Async`, {
+            method: "POST",
+            headers: { "Accept": "application/json", "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+            body: JSON.stringify(json_data)
+        });
 
-    if (!resp.ok) {
-        const errorText = await resp.text();
-        throw new Error(`服务器响应错误(${resp.status}): ${errorText.substring(0, 100)}`);
+        if (!resp.ok) {
+            const errorText = await resp.text();
+            throw new Error(`服务器响应错误(${resp.status}): ${errorText.substring(0, 100)}`);
+        }
+
+        const responseText = await resp.text();
+        let data;
+        try {
+            data = JSON.parse(responseText);
+        } catch (parseError) {
+            console.error('JSON解析失败:', parseError, '响应内容:', responseText);
+            throw new Error('服务器返回数据格式错误，请重新登录后再试');
+        }
+
+        if (!data.result) throw new Error("获取 token 失败: " + JSON.stringify(data));
+        result = data.result;
+        __ossTokenCache = { key: cacheKey, at: Date.now(), result: result };
     }
-
-    const responseText = await resp.text();
-    let data;
-    try {
-        data = JSON.parse(responseText);
-    } catch (parseError) {
-        console.error('JSON解析失败:', parseError, '响应内容:', responseText);
-        throw new Error('服务器返回数据格式错误，请重新登录后再试');
-    }
-
-    if (!data.result) throw new Error("获取 token 失败: " + JSON.stringify(data));
-    const result = data.result;
 
     const client = new OSS({
         region: result.region || "oss-cn-hangzhou",
@@ -3975,7 +4066,7 @@ async function fetchOssBaseUrl(userId) {
     if (!data.result) throw new Error("获取 OSS 配置失败");
     const r = data.result;
     const region = r.region || "oss-cn-hangzhou";
-    const bucket = r.bucket || "example-oss-a";
+    const bucket = r.bucket || "ezy-sxz";
     window.ossBaseUrl = `https://${bucket}.${region}.aliyuncs.com/`;
 }
 
@@ -4005,15 +4096,15 @@ async function uploadFileBtn() {
 
 
 // ============ 获取笔记列表 ============
-// 判断是否使用省锡中 special 路径
-// special 路径只存在于 <relay-host>（省锡中代理服务器）
+// 判断是否使用 special 中转路径
+// special 路径只存在于 zyapi.loshop.com.cn（学校代理服务器）
 function useSpecialPath() {
     const baseUrl = window.API_BASE_BASE_URL || window.API_BASE_URL;
-    // special 路径只支持省锡中（通过 <relay-host> 访问）
-    return baseUrl && baseUrl.includes("<relay-host>");
+    // special 路径只支持走 zyapi 中转的部署（通过 zyapi.loshop.com.cn 访问）
+    return baseUrl && baseUrl.includes("zyapi.loshop.com.cn");
 }
 
-// 获取云笔记 API 路径（自适应：省锡中使用 special 代理，其他学校使用原路径）Resources
+// 获取云笔记 API 路径（自适应：走中转时用 special 代理，否则用原路径）Resources
 function getCloudNoteApiPath(endpoint, encryptedParams) {
     const specialUrl = `${window.API_BASE_URL}/special/${endpoint}?${encryptedParams}`;
     const directUrl = `${window.API_BASE_URL}/CloudNotes/api/Notes/${endpoint}?${encryptedParams}`;
@@ -4526,7 +4617,7 @@ async function searchNotes(page = 1) {
         const query = `fileName=${searchKeyword}`;
         const encryptedQuery = aesEncrypt(query);
 
-        // 自适应：省锡中使用 special 代理，其他学校使用原路径
+        // 自适应：走中转时用 special 代理，否则用原路径
         const url = getCloudNoteApiPath("Search", encryptedQuery);
 
         const response = await fetch(url, {

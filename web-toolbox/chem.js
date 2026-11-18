@@ -1,7 +1,14 @@
 (() => {
-    window.API_BASE_URL = localStorage.getItem("apiBaseUrl") || "https://<relay-host>";
-    window.API_BASE_BASE_URL = localStorage.getItem("apiBaseOrigin") || "https://<relay-host>";
-    window.proxyBaseUrl = "https://<relay-host>/picAgent/";
+    // 头像兜底：旧版本把默认头像指向第三方 CDN（anilist.co），这里统一改回本地资源
+    function avatarSrc() {
+        var p = "";
+        try { p = localStorage.getItem("photo") || ""; } catch (e) {}
+        if (!p || /anilist\.co/.test(p)) return "default-avatar.svg";
+        return p;
+    }
+    window.API_BASE_URL = localStorage.getItem("apiBaseUrl") || "https://zyapi.loshop.com.cn";
+    window.API_BASE_BASE_URL = localStorage.getItem("apiBaseOrigin") || "https://zyapi.loshop.com.cn";
+    window.proxyBaseUrl = "https://zyapi.loshop.com.cn/picAgent/";
     let breadcrumbStack = [
         { id: "0", name: "根目录" }
     ];
@@ -68,12 +75,23 @@
         return "".concat(a).concat(f).concat(s)
     }
 
+    // 日期派生的 key 原来只在页面加载时算一次：页面开着过夜后服务端已换成当天的 key，
+    // 页面还在用昨天的，解密必然失败（表现为 “undefined” is not valid JSON）。
+    // 这里每次加解密前按当天重算，跨天不用刷新页面。
+    window.aesKey = () => {
+        var k = CryptoJS.enc.Utf8.parse(aeskey());
+        if (!window.key || window.key.toString() !== k.toString()) {
+            window.key = k;
+        }
+        return window.key;
+    };
+
     window.key = CryptoJS.enc.Utf8.parse(aeskey()),
         window.aesDecrypt = (encryptedBase64Str) => {
             if (!encryptedBase64Str)
                 return "";
             try {
-                let decryptedData = CryptoJS.AES.decrypt(encryptedBase64Str, key, {
+                let decryptedData = CryptoJS.AES.decrypt(encryptedBase64Str, window.aesKey(), {
                     mode: CryptoJS.mode.ECB,
                     padding: CryptoJS.pad.Pkcs7
                 });
@@ -83,7 +101,7 @@
             }
         },
         window.aesEncrypt = (data) => {
-            let encryptedData = CryptoJS.AES.encrypt(data, key, {
+            let encryptedData = CryptoJS.AES.encrypt(data, window.aesKey(), {
                 mode: CryptoJS.mode.ECB,
                 padding: CryptoJS.pad.Pkcs7
             });
@@ -115,7 +133,7 @@
         } else {
             startTokenRefresh();
             $("#welc2").html(
-                `你好！<img src="${localStorage.getItem("photo")}" style="height:calc(1.425rem + 2.5vw);margin-right:2%;margin-bottom:0.5vh;">${localStorage.getItem("realName")}`
+                `你好！<img src="${avatarSrc()}" style="height:calc(1.425rem + 2.5vw);margin-right:2%;margin-bottom:0.5vh;">${localStorage.getItem("realName")}`
             );
             $("#logoutc").show();
             $("#loginc").hide();
@@ -179,7 +197,7 @@
 
 
     //     showGg(`<p><b>公告</b></p>
-    // <p>网站新域名上线：<web-host></p>
+    // <p>网站新域名上线：zytb.loshop.com.cn</p>
     // <p>QQ群：1067807011</p>
     // `);
 
@@ -236,7 +254,7 @@
 })();
 
 // ==================== 分享功能函数 ====================
-window.SHARE_SERVER = localStorage.getItem("shareServer") || "https://zytbshareapi.example.com";
+window.SHARE_SERVER = localStorage.getItem("shareServer") || "https://zytbshareapi.loshop.com.cn";
 var _shareData = {};
 
 function openShareModal(resourceType, resourceId, title, chapterId) {
@@ -307,7 +325,7 @@ function copyShareLink() {
 })();
 
 async function detectLocalProxy() {
-    let proxyBaseUrl = "https://<relay-host>/picAgent/";
+    let proxyBaseUrl = "https://zyapi.loshop.com.cn/picAgent/";
     let localOk = false;
     try {
     } catch (e) {
@@ -357,7 +375,7 @@ async function loadPictures() {
     };
 
     async function fetchPictures(isRecycleBin, skip) {
-        const url = `https://<relay-host>/api/services/app/PictureLibrary/GetAllPicturesFromLibrary?SkipCount=${skip}&MaxResultCount=${maxCount}&IsRecycleBin=${isRecycleBin}`;
+        const url = `https://zyapi.loshop.com.cn/api/services/app/PictureLibrary/GetAllPicturesFromLibrary?SkipCount=${skip}&MaxResultCount=${maxCount}&IsRecycleBin=${isRecycleBin}`;
         const res = await fetch(url, {
             headers: { "Authorization": "Bearer " + token }
         });
@@ -454,7 +472,7 @@ async function loadPictures() {
 
         items.forEach(item => {
             const imgUrl = window.proxyBaseUrl + item.picture;
-            const aUrl = "https://<relay-host>/picAgent/" + encodeURIComponent(item.picture);
+            const aUrl = "https://zyapi.loshop.com.cn/picAgent/" + encodeURIComponent(item.picture);
 
             html += `
         <tr>
@@ -605,7 +623,7 @@ async function loadMoreQuestions() {
     quesParams.skip = quesSkip;
     quesParams.take = quesTake;
 
-    let resp = await fetch(`https://<relay-host>/api/services/app/Quora/GetSessions`, {
+    let resp = await fetch(`https://zyapi.loshop.com.cn/api/services/app/Quora/GetSessions`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
@@ -628,7 +646,7 @@ async function loadMoreQuestions() {
             <div class="ques-card card h-100" 
                 style="cursor:pointer; background:rgba(255,255,255,0.9); box-shadow:0 2px 6px rgba(0,0,0,0.1);">
                 <div class="card-body d-flex align-items-center mb-2">
-                    <img src="${item.askUserPhoto || 'https://s4.anilist.co/file/anilistcdn/user/avatar/large/default.png'}" 
+                    <img src="${item.askUserPhoto || 'default-avatar.svg'}"
                         class="avatar me-2" 
                         style="width:40px;height:40px;border-radius:50%;object-fit:cover;">
                     <div class="overflow-hidden" style="white-space:nowrap;text-overflow:ellipsis;">
@@ -661,7 +679,7 @@ async function loadMoreQuestions() {
 // 预览详情
 async function previewQuestion(sessionId) {
     ques_focus = sessionId;
-    let resp = await fetch(`https://<relay-host>/api/services/app/Quora/GetMessages`, {
+    let resp = await fetch(`https://zyapi.loshop.com.cn/api/services/app/Quora/GetMessages`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
@@ -719,7 +737,7 @@ ques_download.onclick = function () {
 
 async function mistake_query() {
     var subject = $(mistake_subject).val();
-    let data = await fetch(`https://<relay-host>/api/services/app/MistakeBook/SearchMistakeQstItemsAsync`, {
+    let data = await fetch(`https://zyapi.loshop.com.cn/api/services/app/MistakeBook/SearchMistakeQstItemsAsync`, {
         method: "POST",
         headers: {
             "Content-Type": "application/json",
@@ -765,7 +783,7 @@ async function mistake_query() {
                 $("#screenshotModal").modal("show");
 
                 // 获取题目详情
-                let res = await fetch(`https://<relay-host>/api/services/app/MistakeBook/GetMistakeQstItemDetailInfoAsync?itemId=` + $(this).data("id"), {
+                let res = await fetch(`https://zyapi.loshop.com.cn/api/services/app/MistakeBook/GetMistakeQstItemDetailInfoAsync?itemId=` + $(this).data("id"), {
                     method: "GET",
                     headers: {
                         "Content-Type": "application/json",
@@ -781,7 +799,7 @@ async function mistake_query() {
                 // 1. 题目 & 答案 & 解析
                 if (detail.qstPath) {
                     try {
-                        const qstHtml = await (await fetch(`https://<relay-host>${detail.qstPath}?showAnalysis=true`)).text();
+                        const qstHtml = await (await fetch(`https://zyapi.loshop.com.cn${detail.qstPath}?showAnalysis=true`)).text();
                         const parser = new DOMParser();
                         const doc = parser.parseFromString(qstHtml, "text/html");
                         // 题干
@@ -913,7 +931,7 @@ login_btn.onclick = async () => {
     let passwordVal = password.value;
 
     // 登录获取 token
-    let data = await fetch("https://<relay-host>/api/TokenAuth/Login", {
+    let data = await fetch("https://zyapi.loshop.com.cn/api/TokenAuth/Login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -937,7 +955,7 @@ login_btn.onclick = async () => {
         let refreshExpireTime = Date.now() + data.result.refreshExpireInSeconds * 1000; // refreshToken 过期时间
 
         // 获取用户信息
-        let info = await fetch("https://<relay-host>/api/services/app/User/GetInfoAsync", {
+        let info = await fetch("https://zyapi.loshop.com.cn/api/services/app/User/GetInfoAsync", {
             method: "GET",
             headers: {
                 "Content-Type": "application/json",
@@ -948,8 +966,8 @@ login_btn.onclick = async () => {
         info = info.result;
         info["token"] = token;
 
-        if (!info.photo)
-            info.photo = "https://s4.anilist.co/file/anilistcdn/user/avatar/large/default.png";
+        if (!info.photo || /anilist\.co/.test(info.photo))
+            info.photo = "default-avatar.svg";
 
         for (let i in info) localStorage.setItem(i, info[i]);
 
@@ -969,7 +987,7 @@ login_btn.onclick = async () => {
         $("#login_btn").prop("disabled", false);
         $("#login_btn").text("重新登录");
 
-        message = `你好！<img src="${localStorage.getItem("photo")}" style="height:calc(1.425rem + 2.5vw);margin-right:2%;margin-bottom:0.5vh;">${localStorage.getItem("realName")}`;
+        message = `你好！<img src="${avatarSrc()}" style="height:calc(1.425rem + 2.5vw);margin-right:2%;margin-bottom:0.5vh;">${localStorage.getItem("realName")}`;
         $("#logoutc").show();
         $("#loginc").hide();
         // 启动 token 自动刷新
@@ -999,7 +1017,7 @@ function startTokenRefresh() {
         if (tokenExpire - now <= 10000 && now < refreshTokenExpire) {
             try {
                 let refreshToken = localStorage.getItem("refreshToken");
-                let data = await fetch("https://<relay-host>/api/TokenAuth/RefreshToken", {
+                let data = await fetch("https://zyapi.loshop.com.cn/api/TokenAuth/RefreshToken", {
                     method: "POST",
                     headers: {
                         "Content-Type": "application/json",
@@ -1021,7 +1039,7 @@ function startTokenRefresh() {
 
                     console.log("Token 已刷新:", newToken);
                     var iframe = document.getElementById("zxzl_iframe");
-                    iframe.src = "https://<relay-host>/navPage.html?apiHost=https://<relay-host>&apiToken=" + localStorage.getItem("token") + "#\/list?messageType=pager";
+                    iframe.src = "https://zyapi.loshop.com.cn/navPage.html?apiHost=https://zyapi.loshop.com.cn&apiToken=" + localStorage.getItem("token") + "#\/list?messageType=pager";
 
                 }
             } catch (e) {
@@ -1046,7 +1064,7 @@ async function noteGetAll(page = 1) {
 
         // 第一次加载才请求 API
         if (allNotes.length === 0) {
-            let response = await fetch("https://<relay-host>/CloudNotes/api/Notes/GetAll", {
+            let response = await fetch("https://zyapi.loshop.com.cn/CloudNotes/api/Notes/GetAll", {
                 method: "GET",
                 headers: {
                     "Content-Type": "application/json",
@@ -1154,7 +1172,7 @@ async function noteDownload(fileId, name) {
     if (this.downloading) return;
     this.downloading = 1;
 
-    let response = await fetch(`https://<relay-host>/special/GetByFileId?${aesEncrypt("fileId=" + fileId)}`, {
+    let response = await fetch(`https://zyapi.loshop.com.cn/special/GetByFileId?${aesEncrypt("fileId=" + fileId)}`, {
         method: "GET",
         headers: {
             "Content-Type": "application/json",
@@ -1277,7 +1295,7 @@ async function noteDownload(fileId, name) {
                 // 页脚
                 pdf.setFontSize(8);
                 pdf.setTextColor(100);
-                let footerText = "https://<web-host>";
+                let footerText = "https://zytb.loshop.com.cn";
                 let textWidth = pdf.getTextWidth(footerText);
                 pdf.text(footerText, pageWidth - textWidth - 20, pageHeight - 20);
 
@@ -1352,7 +1370,7 @@ async function noteDownload(fileId, name) {
                 // 页脚
                 pdf.setFontSize(8);
                 pdf.setTextColor(100);
-                let footerText = "https://<web-host>";
+                let footerText = "https://gl.zytb.loshop.com.cn";
                 let textWidth = pdf.getTextWidth(footerText);
                 pdf.text(footerText, pageWidth - textWidth - 20, pageHeight - 20);
 
@@ -1494,7 +1512,7 @@ async function noteDownload2(fileId, name) {
     if (this.downloading) return;
     this.downloading = 1;
 
-    let response = await fetch(`https://<relay-host>/special/GetByFileId?${aesEncrypt("fileId=" + fileId)}`, {
+    let response = await fetch(`https://zyapi.loshop.com.cn/special/GetByFileId?${aesEncrypt("fileId=" + fileId)}`, {
         method: "GET",
         headers: {
             "Content-Type": "application/json",
@@ -1565,7 +1583,7 @@ function shellsort(data) {
 }
 
 async function quoraInit() {
-    let data = await fetch(`https://<relay-host>/api/services/app/Quora/GetCatalogs`, {
+    let data = await fetch(`https://zyapi.loshop.com.cn/api/services/app/Quora/GetCatalogs`, {
         method: "GET",
         headers: {
             "Content-Type": "application/json",
@@ -1581,7 +1599,7 @@ async function quoraInit() {
 }
 
 async function mistakeInit() {
-    let data = await fetch(`https://<relay-host>/api/services/app/MistakeBook/GetMyMistakeBooksAsync`, {
+    let data = await fetch(`https://zyapi.loshop.com.cn/api/services/app/MistakeBook/GetMyMistakeBooksAsync`, {
         method: "GET",
         headers: {
             "Content-Type": "application/json",
@@ -1598,39 +1616,39 @@ async function mistakeInit() {
 
 
 zxzl_login.onclick = async () => {
-    window.open("https://<relay-host>/navPage.html?apiHost=https:\/\/<relay-host>&apiToken=" + localStorage.getItem("token") + "#\/list?messageType=pager");
+    window.open("https://zyapi.loshop.com.cn/navPage.html?apiHost=https:\/\/zyapi.loshop.com.cn&apiToken=" + localStorage.getItem("token") + "#\/list?messageType=pager");
 }
 
 function zxzl_set_url() {
 
     var iframe = document.getElementById("zxzl_iframe");
-    iframe.src = "https://<relay-host>/navPage.html?apiHost=https://<relay-host>&apiToken=" + localStorage.getItem("token") + "#\/list?messageType=pager";
+    iframe.src = "https://zyapi.loshop.com.cn/navPage.html?apiHost=https://zyapi.loshop.com.cn&apiToken=" + localStorage.getItem("token") + "#\/list?messageType=pager";
 
 }
 
 ck_login = document.getElementById("ck_login");
 ck_login.onclick = async () => {
-    window.open("ezyRawContent.html?apiHost=https:\/\/<relay-host>&apiToken=" + localStorage.getItem("token") + "#/index/courseChoosing/StudentsCoursesList");
+    window.open("ezyRawContent.html?apiHost=https:\/\/zyapi.loshop.com.cn&apiToken=" + localStorage.getItem("token") + "#/index/courseChoosing/StudentsCoursesList");
 }
 
 function ck_set_url() {
     var iframe = document.getElementById("ck_iframe");
-    iframe.src = "ezyRawContent.html?apiHost=https:\/\/<relay-host>&apiToken=" + localStorage.getItem("token") + "#/index/courseChoosing/StudentsCoursesList";
+    iframe.src = "ezyRawContent.html?apiHost=https:\/\/zyapi.loshop.com.cn&apiToken=" + localStorage.getItem("token") + "#/index/courseChoosing/StudentsCoursesList";
 
 }
 
 
-var note_link = "http:\/\/<oss-bucket>.oss-cn-hangzhou.aliyuncs.com\/1\/appstore\/云笔记_master_20240513.01_1938_1.9.38.apk";
-var test_link = "http:\/\/<oss-bucket>.oss-cn-hangzhou.aliyuncs.com\/1\/appstore\/新测评_master_20240304.01_release_215_2.1.5.apk";
-var learn_link = "http:\/\/<oss-bucket>.oss-cn-hangzhou.aliyuncs.com\/1\/appstore\/云笔记_master_20240513.01_1938_1.9.38.apk";
-var user_link = "http:\/\/<oss-bucket>.oss-cn-hangzhou.aliyuncs.com\/1\/appstore\/用户中心_master_20240426.01_release_40_2.0.15.apk";
-var mistake_link = "http:\/\/<oss-bucket>.oss-cn-hangzhou.aliyuncs.com\/1\/appstore\/错题本_master_20240326.01_57_1.0.57.apk";
-var web_link = "http:\/\/<oss-bucket>.oss-cn-hangzhou.aliyuncs.com\/1\/appstore\/浏览器_master_20240221.01_1211_1.2.11.apk";
-var chat_link = "http:\/\/<oss-bucket>.oss-cn-hangzhou.aliyuncs.com\/1\/appstore\/随身答(学生版)_master_20240326.01_release_11_1.0.11.apk";
+var note_link = "http:\/\/ezy-sxz.oss-cn-hangzhou.aliyuncs.com\/1\/appstore\/云笔记_master_20240513.01_1938_1.9.38.apk";
+var test_link = "http:\/\/ezy-sxz.oss-cn-hangzhou.aliyuncs.com\/1\/appstore\/新测评_master_20240304.01_release_215_2.1.5.apk";
+var learn_link = "http:\/\/ezy-sxz.oss-cn-hangzhou.aliyuncs.com\/1\/appstore\/云笔记_master_20240513.01_1938_1.9.38.apk";
+var user_link = "http:\/\/ezy-sxz.oss-cn-hangzhou.aliyuncs.com\/1\/appstore\/用户中心_master_20240426.01_release_40_2.0.15.apk";
+var mistake_link = "http:\/\/ezy-sxz.oss-cn-hangzhou.aliyuncs.com\/1\/appstore\/错题本_master_20240326.01_57_1.0.57.apk";
+var web_link = "http:\/\/ezy-sxz.oss-cn-hangzhou.aliyuncs.com\/1\/appstore\/浏览器_master_20240221.01_1211_1.2.11.apk";
+var chat_link = "http:\/\/ezy-sxz.oss-cn-hangzhou.aliyuncs.com\/1\/appstore\/随身答(学生版)_master_20240326.01_release_11_1.0.11.apk";
 
 function reload_note_link() {
     $.ajax({
-        url: 'https:\/\/<relay-host>\/api\/services\/app\/AppStore\/CheckUpdateAsync?packageName=com.friday.cloudsnote&version=11&appType=0',
+        url: 'https:\/\/zyapi.loshop.com.cn\/api\/services\/app\/AppStore\/CheckUpdateAsync?packageName=com.friday.cloudsnote&version=11&appType=0',
         type: 'get',
         // 设置的是请求参数
         data: {
@@ -1731,7 +1749,7 @@ function download_note() {
 
 function reload_test_link() {
     $.ajax({
-        url: 'https:\/\/<relay-host>\/api\/services\/app\/AppStore\/CheckUpdateAsync?packageName=com.zykj.evaluation&version=11&appType=0',
+        url: 'https:\/\/zyapi.loshop.com.cn\/api\/services\/app\/AppStore\/CheckUpdateAsync?packageName=com.zykj.evaluation&version=11&appType=0',
         type: 'get',
         // 设置的是请求参数
         data: {
@@ -1833,7 +1851,7 @@ function download_test() {
 
 function reload_learn_link() {
     $.ajax({
-        url: 'https:\/\/<relay-host>\/api\/services\/app\/AppStore\/CheckUpdateAsync?packageName=com.zhongyukejiao.learningexpert&version=11&appType=0',
+        url: 'https:\/\/zyapi.loshop.com.cn\/api\/services\/app\/AppStore\/CheckUpdateAsync?packageName=com.zhongyukejiao.learningexpert&version=11&appType=0',
         type: 'get',
         // 设置的是请求参数
         data: {
@@ -1936,7 +1954,7 @@ function download_learn() {
 
 function reload_user_link() {
     $.ajax({
-        url: 'https:\/\/<relay-host>\/api\/services\/app\/AppStore\/CheckUpdateAsync?packageName=com.zykj.manage&version=11&appType=0',
+        url: 'https:\/\/zyapi.loshop.com.cn\/api\/services\/app\/AppStore\/CheckUpdateAsync?packageName=com.zykj.manage&version=11&appType=0',
         type: 'get',
         // 设置的是请求参数
         data: {
@@ -2038,7 +2056,7 @@ function download_user() {
 
 function reload_mistake_link() {
     $.ajax({
-        url: 'https:\/\/<relay-host>\/api\/services\/app\/AppStore\/CheckUpdateAsync?packageName=com.zykj.mistake&version=11&appType=0',
+        url: 'https:\/\/zyapi.loshop.com.cn\/api\/services\/app\/AppStore\/CheckUpdateAsync?packageName=com.zykj.mistake&version=11&appType=0',
         type: 'get',
         // 设置的是请求参数
         data: {
@@ -2140,7 +2158,7 @@ function download_mistake() {
 
 function reload_web_link() {
     $.ajax({
-        url: 'https:\/\/<relay-host>\/api\/services\/app\/AppStore\/CheckUpdateAsync?packageName=com.zykj.subscriber&version=11&appType=0',
+        url: 'https:\/\/zyapi.loshop.com.cn\/api\/services\/app\/AppStore\/CheckUpdateAsync?packageName=com.zykj.subscriber&version=11&appType=0',
         type: 'get',
         // 设置的是请求参数
         data: {
@@ -2242,7 +2260,7 @@ function download_web() {
 
 function reload_chat_link() {
     $.ajax({
-        url: 'https:\/\/<relay-host>\/api\/services\/app\/AppStore\/CheckUpdateAsync?packageName=com.zykj.student.dialogue&version=11&appType=0',
+        url: 'https:\/\/zyapi.loshop.com.cn\/api\/services\/app\/AppStore\/CheckUpdateAsync?packageName=com.zykj.student.dialogue&version=11&appType=0',
         type: 'get',
         // 设置的是请求参数
         data: {
@@ -2359,7 +2377,7 @@ function reload_token() {
 }
 
 function show_class_table() {
-    window.open("http:\/\/sxz.school.example.com/navPage.html?apiHost=https:\/\/<relay-host>&apiToken=" + localStorage.getItem("token") + "#\/class");
+    window.open("http:\/\/sxz.school.zykj.org/navPage.html?apiHost=https:\/\/zyapi.loshop.com.cn&apiToken=" + localStorage.getItem("token") + "#\/class");
 }
 
 function show_online_test() {
@@ -2539,7 +2557,7 @@ async function show_lesson() {
     while (true) {
         try {
             const res = await $.ajax({
-                url: `https://<relay-host>/SelfStudy/api/Learn/LearningCourses?page=${page}`,
+                url: `https://zyapi.loshop.com.cn/SelfStudy/api/Learn/LearningCourses?page=${page}`,
                 type: "get",
                 dataType: "json",
                 beforeSend: function (request) {
@@ -2583,7 +2601,7 @@ function renderCourseCards() {
         if (window.proxyBaseUrl) {
             coverUrl = window.proxyBaseUrl + item.cover;
         } else {
-            coverUrl = "https://<relay-host>/picAgent/" + item.cover;
+            coverUrl = "https://zyapi.loshop.com.cn/picAgent/" + item.cover;
         }
         const progress = item.progress || 0;
         const teacher = item.userName || "未知教师";
@@ -2635,7 +2653,7 @@ function show_class() {
     if (!courseId) return;
 
     $.ajax({
-        url: "https://<relay-host>/SelfStudy/api/Learn/CourseDetail?id=" + courseId,
+        url: "https://zyapi.loshop.com.cn/SelfStudy/api/Learn/CourseDetail?id=" + courseId,
         type: "get",
         dataType: "json",
         beforeSend: function (request) {
@@ -2734,7 +2752,7 @@ function show_page() {
     $(".ball").fadeIn(500);
     $.ajax({
         url:
-            "https://<relay-host>/SelfStudy/api/learn/readContent?catalogId=" +
+            "https://zyapi.loshop.com.cn/SelfStudy/api/learn/readContent?catalogId=" +
             $("#cid_input").val() +
             "&courseId=" +
             $("#id_input").val(),
@@ -2880,7 +2898,7 @@ async function getUserId() {
     const token = localStorage.getItem("token");
     if (!token) throw new Error("localStorage 中未找到 token");
 
-    const url = "https://<relay-host>/api/services/app/User/GetInfoAsync";
+    const url = "https://zyapi.loshop.com.cn/api/services/app/User/GetInfoAsync";
     const headers = {
         "Accept": "application/json, text/plain, */*",
         "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
@@ -2897,7 +2915,7 @@ async function getUserId() {
 
 // 更新 URL 预览
 function updateUrlPreview() {
-    const prefix = `https://<oss-bucket>.oss-cn-hangzhou.aliyuncs.com/`;
+    const prefix = `https://ezy-sxz.oss-cn-hangzhou.aliyuncs.com/`;
     const fc = document.getElementById("selectFc").value;
     const userId = document.getElementById("urlUserId").textContent;
     const nonce = document.getElementById("inputNonce").value || "自动生成";
@@ -2926,7 +2944,7 @@ async function uploadFile(file, userId, fc, nonceInput, fileNameInput) {
     const token = localStorage.getItem("token");
     const json_data = { fc: V_MAP[fc], fr: G_MAP[fr], ft, fe, fo, nonce, ts, sign };
 
-    const resp = await fetch("https://<relay-host>/api/services/app/ObjectStorage/GenerateTokenV2Async", {
+    const resp = await fetch("https://zyapi.loshop.com.cn/api/services/app/ObjectStorage/GenerateTokenV2Async", {
         method: "POST",
         headers: { "Accept": "application/json", "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify(json_data)
@@ -2998,7 +3016,7 @@ async function uploadFileBtn() {
 async function loadNotes(parentId = "0") {
     const params = `parentid=${parentId}&isNoteNode=true`;
     const encryptedParams = aesEncrypt(params);
-    const apiUrl = `https://<relay-host>/special/GetByParentId?${encryptedParams}`;
+    const apiUrl = `https://zyapi.loshop.com.cn/special/GetByParentId?${encryptedParams}`;
 
     try {
         const res = await fetch(apiUrl, {
@@ -3110,7 +3128,7 @@ async function fetchExams(page = 1) {
     currentExamPage = page;
     const skipCount = (currentExamPage - 1) * examPageSize;
 
-    const res = await fetch('https://<relay-host>/api/services/app/Task/GetStudentTaskListAsync', {
+    const res = await fetch('https://zyapi.loshop.com.cn/api/services/app/Task/GetStudentTaskListAsync', {
         method: 'POST',
         headers: {
             'Authorization': `Bearer ${token}`,
@@ -3253,14 +3271,14 @@ async function showExamQuestions(examName, examId) {
 }
 
 async function fetchExamTask(token, examId) {
-    const res = await fetch(`https://<relay-host>/api/services/app/Task/GetExamTaskAsync?id=${examId}`, {
+    const res = await fetch(`https://zyapi.loshop.com.cn/api/services/app/Task/GetExamTaskAsync?id=${examId}`, {
         headers: { 'Authorization': `Bearer ${token}` }
     });
     return await res.json();
 }
 
 async function fetchQstAnswerView(qstId) {
-    const res = await fetch(`https://<relay-host>/Question/View/${qstId}?showAnalysis=true`);
+    const res = await fetch(`https://zyapi.loshop.com.cn/Question/View/${qstId}?showAnalysis=true`);
     return await res.text();
 }
 
@@ -3282,7 +3300,7 @@ async function searchNotes(page = 1) {
         const encryptedQuery = aesEncrypt(query);
 
         // 直接把加密字符串放在 ? 后面
-        const url = `https://<relay-host>/special/Search?${encryptedQuery}`;
+        const url = `https://zyapi.loshop.com.cn/special/Search?${encryptedQuery}`;
 
         const response = await fetch(url, {
             method: "GET",

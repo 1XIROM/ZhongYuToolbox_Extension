@@ -2,7 +2,7 @@
  * 在线专栏：一键下载 / 批量下载
  *
  * 为什么这样做：
- *   专栏页面 navPage.html 在 sxz.school.example.com，与本页不同源，父页面读不到
+ *   专栏页面 navPage.html 在 sxz.school.zykj.org，与本页不同源，父页面读不到
  *   iframe 里的 DOM，所以没法"点它里面的按钮"。但专栏本身就是这个 SPA 用
  *   appWebSite/* 接口渲染出来的，于是直接复刻它的取数链路：
  *
@@ -17,10 +17,24 @@
  *   用老 host 的 token（navToken，专栏登录拿到的），不是新 host 的 token。
  * ===================================================================== */
 window.ColBatch = (function () {
-    var API_DEFAULT = 'http://<api-host>';
+    var API_DEFAULT = 'http://sxz.api.zykj.org';
     var DOC_EXT = /\.(pdf|docx?|pptx?|xlsx?|txt|md|csv|zip|rar|7z|mp4|mp3|wav|png|jpe?g|gif|webp|svg)(\?|#|$)/i;
     var MAX_PAGES = 300;      // 单个专栏最多取多少页
     var POOL = 4;             // 并发下载数
+
+    // 官方 v0.0.8 客户端 H5 (column-*.js) 里实际调用的端点，REA 静态对照 2026-11-15。
+    // 仅作为「优先候选」：任一新版点失败、非 200 或返回空，都会完整回退到原有链路。
+    // 若发现新版点行为不符预期，控制台执行 localStorage.setItem('colUseOfficialApi','0')
+    // 即可完全恢复旧逻辑，无需改代码。
+    var OFFICIAL = {
+        catalogs: '/api/services/app/AppWebSite/GetSpecialCatalogAsync',
+        pages: '/api/services/app/AppWebSite/GetMyCatalogPagesAsync'
+    };
+
+    function useOfficial() {
+        try { return localStorage.getItem('colUseOfficialApi') !== '0'; }
+        catch (e) { return true; }
+    }
 
     function $(id) { return document.getElementById(id); }
 
@@ -44,7 +58,7 @@ window.ColBatch = (function () {
         var stored = localStorage.getItem('navApiHost');
         if (stored && /^https?:\/\//.test(stored)) return stored.replace(/\/+$/, '');
         var code = localStorage.getItem('colSchool') || 'sxz';
-        return 'http://' + String(code).trim() + '.api.example.com';
+        return 'http://' + String(code).trim() + '.api.zykj.org';
     }
 
     function token() {
@@ -52,7 +66,11 @@ window.ColBatch = (function () {
     }
 
     async function call(path, params) {
-        var url = apiBase() + '/api/services/app/appWebSite/' + path;
+        // 传以 /api/ 开头的完整路径时不再补 appWebSite 前缀（用于官方客户端的
+        // AppWebSite/* 端点，注意大小写与旧端点不同）。现有调用都是普通端点名，行为不变。
+        var url = /^\/api\//i.test(path)
+            ? apiBase() + path
+            : apiBase() + '/api/services/app/appWebSite/' + path;
         if (params && Object.keys(params).length) {
             url += (url.indexOf('?') >= 0 ? '&' : '?') +
                 Object.keys(params).map(function (k) {
@@ -104,7 +122,7 @@ window.ColBatch = (function () {
             var s = v.trim();
             if (/^\/\//.test(s)) s = 'http:' + s;   // 协议相对地址
             if (/^https?:\/\//i.test(s)) {
-                if (DOC_EXT.test(s) || /\/oss\//i.test(s) || /aliyuncs\.com|example\.com/i.test(s)) out.push(s);
+                if (DOC_EXT.test(s) || /\/oss\//i.test(s) || /aliyuncs\.com|zyai\.cc/i.test(s)) out.push(s);
             } else if (/<a[^>]+href=/i.test(s) || /<img[^>]+src=/i.test(s)) {
                 var re = /(?:href|src)\s*=\s*["']([^"']+)["']/gi, m;
                 while ((m = re.exec(s))) {
@@ -154,6 +172,20 @@ window.ColBatch = (function () {
     /* ---------------- 主流程 ---------------- */
 
     async function collectColumns(trace) {
+        // 学生角色下 GetAllColListAsync / GetSubscribeListAsync 常返回 403，
+        // 而官方客户端用的是 GetSpecialCatalogAsync。先试新版点，失败或空则原样回退。
+        if (useOfficial()) {
+            try {
+                var rn = await call(OFFICIAL.catalogs, {});
+                trace.push('GetSpecialCatalogAsync -> ' + rn.status + ' ' + (rn.json ? 'json' : 'text'));
+                if (rn.status === 200) {
+                    var nc = pickArray(unwrap(rn.json));
+                    if (nc && nc.length) return nc;
+                }
+            } catch (e) {
+                trace.push('GetSpecialCatalogAsync -> ERR ' + ((e && e.message) || e));
+            }
+        }
         var r1 = await call('GetAllColListAsync', {});
         trace.push('GetAllColListAsync -> ' + r1.status + ' ' + (r1.json ? 'json' : 'text'));
         var cols = pickArray(unwrap(r1.json));
@@ -173,8 +205,23 @@ window.ColBatch = (function () {
     }
 
     async function collectPages(col, trace) {
-        var colId = col.id || col.colId || col.Id;
+        // 官方目录对象用 catalogId，兼容加上（只增不删，原有字段优先级不变）。
+        var colId = col.id || col.colId || col.Id || col.catalogId || col.CatalogId;
         if (!colId) return [];
+        if (useOfficial()) {
+            try {
+                var rn = await call(OFFICIAL.pages, {
+                    catalogId: colId, skipCount: 0, maxResultCount: MAX_PAGES
+                });
+                trace.push('GetMyCatalogPagesAsync(catalogId=' + colId + ') -> ' + rn.status);
+                if (rn.status === 200) {
+                    var np = pickArray(unwrap(rn.json));
+                    if (np && np.length) return np;
+                }
+            } catch (e) {
+                trace.push('GetMyCatalogPagesAsync -> ERR ' + ((e && e.message) || e));
+            }
+        }
         var r = await call('GetPageListByPagedAsync', {
             colId: colId, skipCount: 0, maxResultCount: MAX_PAGES
         });
@@ -216,7 +263,7 @@ window.ColBatch = (function () {
                     var urls = harvest(p);
                     // 页本身没带地址 → 取详情再扫
                     if (!urls.length) {
-                        var pid = p.id || p.pageId || p.Id;
+                        var pid = p.id || p.pageId || p.Id || p.catalogId || p.CatalogId;
                         if (pid) {
                             var rd = await call('GetPageAsync', { id: pid });
                             if (rd.json) urls = harvest(unwrap(rd.json));

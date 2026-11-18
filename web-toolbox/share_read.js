@@ -1,10 +1,13 @@
 /* ================= 中育云笔记 · 老师分享给我的文件（只读） =================
- * 链路（从 com.friday.cloudsnote 1.13.4 逆向）：
- *   CloudNotes/api/SuperShare/{GetSharedToMeByTeacher, GetByParentId, GetResourceByFileId}
+ * 链路（REA 静态对照 com.friday.cloudsnote 1.9.38 / 1.13.5 DEX，2026-11-15）：
+ *   CloudNotes/api/SuperShare/ 官方端点全表
+ *     1.9.38 已有：GetByParentId, GetResourceByFileId, SharedToMe
+ *     1.13.5 新增：GetSharedToMeByTeacher, RetrieveTeachers, GetShareFileById
+ *   另有 CloudNotes/api/Notes/* 与 Resources/*，两年未变。
  * 调用约定与 Notes 接口一致：?<AES-ECB/PKCS7 base64>，Authorization: Bearer <token>
  *
- * 注意：Retrofit 接口的 @Query 参数名被 R8 抹掉了，无法静态确证；
- * 因此这里按候选顺序探测，命中才写入 localStorage 记忆，空结果不算命中。
+ * 注意：Retrofit 接口的 @Query 参数名被 R8 抹掉了，端点名已由 DEX 确证、
+ * 参数名仍无法静态确证，因此保留多候选探测，命中才写入 localStorage 记忆。
  */
 window.TchShare = (function () {
     'use strict';
@@ -12,8 +15,14 @@ window.TchShare = (function () {
     // v2：旧版把"字面量参数"当缓存，会把 parentId=0 复用到子目录，必须作废
     var CACHE_KEY = 'tchShare_ep_ok_v2';
 
+    // 官方端点开关：LocalStorage 置 '0' 即完全回到改动前的候选序列。
+    function useOfficial() {
+        try { return localStorage.getItem('tchUseOfficialApi') !== '0'; }
+        catch (e) { return true; }
+    }
+
     // 用于确认浏览器有没有真的加载到新代码（诊断第一行会打印）
-    var VERSION = 'v8-20261024';
+    var VERSION = 'v9-20261115';
 
     var KEY_FILES = ['shareFileList', 'fileList', 'list', 'items', 'records', 'rows', 'data'];
     var KEY_TCH = ['teachers', 'teacherList', 'list', 'items', 'records', 'rows', 'data'];
@@ -35,7 +44,7 @@ window.TchShare = (function () {
     }
 
     function specialPath() {
-        return apiBase().indexOf('<relay-host>') >= 0;
+        return apiBase().indexOf('zyapi.loshop.com.cn') >= 0;
     }
 
     function decData(v) {
@@ -487,7 +496,7 @@ window.TchShare = (function () {
 
     async function netcheck() {
         var b = probeBox();
-        if (b) b.innerHTML = '<span class="text-muted">正在自检（依次试 5 个地址）…</span>';
+        if (b) b.innerHTML = '<span class="text-muted">正在自检（依次试 6 个地址）…</span>';
 
         var base = String(window.API_BASE_URL || '').replace(/\/+$/, '');
         var tok = localStorage.getItem('token') || '';
@@ -514,7 +523,11 @@ window.TchShare = (function () {
         await add('API 不带 token', base + '/CloudNotes/api/SuperShare/RetrieveTeachers');
         await add('API 带 token（明文探测）', base + '/CloudNotes/api/SuperShare/RetrieveTeachers',
             { headers: { Authorization: 'Bearer ' + tok } });
-        await add('OSS 主机', 'https://<oss-bucket>.oss-cn-shenzhen.aliyuncs.com/');
+        // 2024 旧部署用 GeneratorTokenAsync，2026 改名 GenerateTokenV2Async。
+        // GET 到 POST-only 端点返回 405 即说明旧端点仍在；只读探测，不改上传主流程。
+        await add('OSS 授权（旧版 GeneratorTokenAsync）', base + '/api/services/app/ObjectStorage/GeneratorTokenAsync',
+            { headers: { Authorization: 'Bearer ' + tok } });
+        await add('OSS 主机', 'https://ezy-nswgy.oss-cn-shenzhen.aliyuncs.com/');
 
         var fileUrl = firstUrlInList();
         if (fileUrl) await add('当前文件直链', fileUrl);
@@ -592,7 +605,7 @@ window.TchShare = (function () {
         renderCrumbs();
         renderLoading('正在读取老师分享给你的文件…');
 
-        var r = await probe('teachers', [
+        var cands = [
             { ep: 'RetrieveTeachers', plain: '' },                  // 实测命中（example-school 部署，空参）
             { ep: 'RetrieveTeachers', plain: '0' },
             { ep: 'GetSharedToMeByTeacher', plain: '' },
@@ -602,7 +615,11 @@ window.TchShare = (function () {
             { ep: 'GetSharedToMeByTeacher', plain: 'teacherId=0' },
             { ep: 'GetSharedToMeByTeacher', plain: 'shareType=0' },
             { ep: 'GetSharedToMeByTeacher', plain: null }
-        ], function (d) {
+        ];
+        // 官方端点（云笔记 1.9.38 起就有）：上面候选全失败时的兜底。
+        // 不放在首位，避免影响已实测命中的 RetrieveTeachers 与既有缓存记忆。
+        if (useOfficial()) cands.push({ ep: 'SharedToMe', plain: '' });
+        var r = await probe('teachers', cands, function (d) {
             return pickArr(d, KEY_FILES).length === 0 && pickArr(d, KEY_TCH).length === 0;
         });
         st.lastLog = r.log;
@@ -824,6 +841,8 @@ window.TchShare = (function () {
             renderLoading('正在打开文件…');
             var oid = ownerOf(f);
             var c = [];
+            // 前两项为 DEX 确证的官方端点（GetResourceByFileId / GetShareFileById）；
+            // 下面是为旧部署保留的参数变体，不是猜测的端点名。
             if (oid !== null) {
                 c.push({ ep: 'GetResourceByFileId', plain: 'fileId=' + fid + '&ownerId=' + oid });
                 c.push({ ep: 'GetShareFileById', plain: 'fileId=' + fid + '&ownerId=' + oid });
@@ -939,6 +958,8 @@ window.TchShare = (function () {
             { ep: 'GetByParentId', shape: 'pid=oid', plain: 'parentId=' + oid + '&ownerId=' + oid + '&isRoot=false' },
             { ep: 'GetByParentId', shape: 'pid=-1', plain: 'parentId=-1&ownerId=' + oid + '&isRoot=false' },
             { ep: 'GetByParentId', shape: 'noteNode', plain: 'parentId=0&ownerId=' + oid + '&isNoteNode=true' },
+            // 官方端点是 SharedToMe；GetSharedToMe 是早期猜测名，保留作回退。
+            { ep: 'SharedToMe', shape: 'official', plain: '' },
             { ep: 'GetSharedToMe', shape: 'byTeacher', plain: 'teacherId=' + oid },
             { ep: 'GetSharedToMeByTeacher', shape: 'teacherId', plain: 'teacherId=' + oid }
         ]);

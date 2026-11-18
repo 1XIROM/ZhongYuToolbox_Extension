@@ -17,12 +17,12 @@
 
     // 学校代码 → 老 host。官方客户端里 sxz 是硬编码默认值。
     function schoolHost(code) {
-        return 'http://' + String(code || 'sxz').trim() + '.api.example.com';
+        return 'http://' + String(code || 'sxz').trim() + '.api.zykj.org';
     }
 
     function base() {
-        // 专栏接口只认老 host（http://<学校代码>.api.example.com）。
-        // 新 host（<api-host>）一律 403/404，测它没有意义。
+        // 专栏接口只认老 host（http://<学校代码>.api.zykj.org）。
+        // 新 host（nswgy-api.zyai.cc）一律 403/404，测它没有意义。
         const stored = localStorage.getItem('navApiHost');
         if (stored && /^https?:\/\//.test(stored)) return stored.replace(/\/+$/, '');
         return schoolHost(localStorage.getItem('colSchool') || 'sxz');
@@ -59,7 +59,13 @@
         // GetPageAsync 已经证明 appWebSite/GetPageAsync 走的就是这套信封，
         // 说明真正给学生的读接口在 SpecialPageRegulation 控制器下，之前完全没测。
         { name: 'GetPagedSpecialPageListAsync', ctrl: 'SpecialPageRegulation', method: 'POST', variants: [''], body: { skipCount: 0, maxResultCount: 20 } },
-        { name: 'GetPageAsync', ctrl: 'SpecialPageRegulation', variants: ['id=1'] }
+        { name: 'GetPageAsync', ctrl: 'SpecialPageRegulation', variants: ['id=1'] },
+        // 官方 v0.0.8 客户端 H5 (column-*.js) 实际调用的端点，REA 静态对照 2026-11-15。
+        // 只做只读探测，不改登录/下载主流程；若这几行返回 200，说明学生角色下这套可用。
+        { name: 'GetSpecialCatalogAsync', ctrl: 'AppWebSite', variants: [''] },
+        { name: 'GetMyCatalogPagesAsync', ctrl: 'AppWebSite', variants: ['catalogId=1&maxResultCount=20&skipCount=0'] },
+        { name: 'SearchMyPagesByColIdAsync', ctrl: 'AppWebSite', method: 'POST', variants: [''],
+          body: { Type: 2, skipCount: 0, MaxResultCount: 20, orderBy: 'PublishTime' } }
     ];
 
     function qs(extra) {
@@ -116,8 +122,8 @@
         if (!navTok) {
             out('还没有「专栏 token」。\n\n' +
                 '请先在页面顶部填 学校代码/用户名/密码，点「专栏登录」，再点这个诊断。\n\n' +
-                '原因：专栏接口只认老 host（http://<api-host>）签发的 token；\n' +
-                '你正常登录拿的是新 host（<api-host>）token，打专栏接口必然 403/404，\n' +
+                '原因：专栏接口只认老 host（http://sxz.api.zykj.org）签发的 token；\n' +
+                '你正常登录拿的是新 host（nswgy-api.zyai.cc）token，打专栏接口必然 403/404，\n' +
                 '所以这个诊断必须先有专栏 token 才有意义。');
             return;
         }
@@ -196,8 +202,8 @@
  * 专栏登录（A 方案）
  *
  * 背景（从官方客户端 v0.0.8 的 app.asar 里读出，并用裸请求验证过）：
- *   - 学校代码 sxz 对应  server  = http://<api-host>
- *                        webServer = http://sxz.school.example.com
+ *   - 学校代码 sxz 对应  server  = http://sxz.api.zykj.org
+ *                        webServer = http://sxz.school.zykj.org
  *   - 登录：POST {server}/api/TokenAuth/Login  body {userName, password, clientType:1}
  *           → result.accessToken
  *   - 老专栏页：{webServer}/navPage.html?apiHost={server}&apiToken={accessToken}#/list?messageType=pager
@@ -214,7 +220,7 @@ window.ColLogin = (function () {
     var WEB_KEY = 'navPageBase';
 
     var DEFAULTS = {
-        sxz: { server: 'http://<api-host>', webServer: 'http://sxz.school.example.com' }
+        sxz: { server: 'http://sxz.api.zykj.org', webServer: 'http://sxz.school.zykj.org' }
     };
 
     function $(id) { return document.getElementById(id); }
@@ -233,7 +239,7 @@ window.ColLogin = (function () {
         var t = DEFAULTS[code];
         if (t) return Promise.resolve(t);
         // 未知学校代码：走官方发现接口（客户端同款）
-        return fetch('https://hagateway.example.com/api/discovery/' + encodeURIComponent(code))
+        return fetch('https://hagateway.zykj.org/api/discovery/' + encodeURIComponent(code))
             .then(function (r) {
                 if (!r.ok) throw new Error('学校代码无效（HTTP ' + r.status + '）');
                 return r.json();

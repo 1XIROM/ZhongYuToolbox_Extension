@@ -1,0 +1,20 @@
+{
+  "name": "zhongyu-toolbox",
+  "version": "1.0.0",
+  "private": true,
+  "description": "中育工具网页版 + HTML 转云笔记流水线（修改版）",
+  "engines": {
+    "node": ">=21"
+  },
+  "scripts": {
+    "serve": "node web-toolbox/serve.js 8088",
+    "dry": "node pipeline/html2note.js --dry",
+    "watch": "node pipeline/html2note.js --watch --check-cloud",
+    "check-auth": "node pipeline/html2note.js --check-auth"
+  },
+  "os": [
+    "win32",
+    "linux",
+    "darwin"
+  ]
+}

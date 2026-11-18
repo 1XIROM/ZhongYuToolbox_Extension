@@ -1,7 +1,6 @@
 // 本地静态服务 + 同源转发（网页工具箱用它托管静态文件）
 //   1) 把本文件所在目录（web-toolbox/）以 http 提供；file:// 下 fetch 与 iframe 受限
 //   2) /proxy/<绝对URL> 做服务端转发：OSS 上的图片没有 Access-Control-Allow-Origin，
-  console.log("领创转发 http://127.0.0.1:" + PORT + "/linspirer/public-interface.php");
 //      浏览器直连会被 CORS 拦；走同源路径就没有跨域问题，也不需要额外开进程。
 const http = require('http');
 const https = require('https');
@@ -14,12 +13,11 @@ const PORT = Number(process.argv[2] || 8088);
 const PROXY_TIMEOUT_MS = 30000;
 const PROXY_MAX_BYTES = 64 * 1024 * 1024;
 
-// 领创（Linspirer）JSON-RPC 同源转发配置
-// 网页版原先 POST 到 https://<relay-host>/public-interface.php，
-// 但该域名已被复用成只接受 GET/OPTIONS 的「GForm 授权管理」站，POST 一律 405。
-// 真实上游 https://cloud.linspirer.com:883 仍接受 POST，却不返回 CORS 头，浏览器无法直连。
-// 因此由本服务把 /linspirer/<path> 转发到上游，页面只访问同源地址。
-const LINSPIRER_UPSTREAM = 'https://cloud.linspirer.com:883';
+// 领创（Linspirer）上游：默认走厂商云端，可用环境变量 LINSPIRER_UPSTREAM 覆盖。
+// 说明：网页版原先 POST 到 zytb-linspirer-api.loshop.com.cn，该域名已被复用成
+// 只接受 GET/OPTIONS 的「GForm 授权管理」站，POST 一律 405；真实上游仍接受 POST，
+// 但不返回 CORS 头，浏览器无法直连，所以由本服务把 /linspirer/<path> 转发过去。
+const LINSPIRER_UPSTREAM = (process.env.LINSPIRER_UPSTREAM || 'https://cloud.linspirer.com:883').trim().replace(/\/+$/, '');
 const LINSPIRER_TIMEOUT_MS = 20000;
 const LINSPIRER_MAX_BYTES = 16 * 1024 * 1024;
 
@@ -288,7 +286,8 @@ http.createServer((req, res) => {
 
   let p = decodeURIComponent(rawPath.split('?')[0].split('#')[0]);
   if (p === '/' || p === '') p = '/index.html';
-  const full = path.join(ROOT, p.replace(/^\/+/, ''));
+  const rel = p.replace(/^\/+/, '');
+  const full = path.join(ROOT, rel);
   if (!full.startsWith(ROOT)) {
     res.writeHead(403);
     return res.end('forbidden');
@@ -297,5 +296,5 @@ http.createServer((req, res) => {
 }).listen(PORT, '127.0.0.1', () => {
   console.log('serving ' + ROOT + ' at http://127.0.0.1:' + PORT + '/');
   console.log('同源转发 http://127.0.0.1:' + PORT + '/proxy/<绝对URL>');
-  console.log("领创转发 http://127.0.0.1:" + PORT + "/linspirer/public-interface.php");
+  console.log("领创转发 http://127.0.0.1:" + PORT + "/linspirer/public-interface.php -> " + LINSPIRER_UPSTREAM);
 });

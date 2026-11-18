@@ -142,12 +142,12 @@
                         return v.toString();
                     } catch (e) { /* 继续 */ }
                 }
-                return (origin || 'https://example-school.example.com') + '/navPage.html';
+                return (origin || 'https://nswgy.zyai.cc') + '/navPage.html';
             }
 
             var navPage = normNavPage();
             var spaOrigin = '';
-            try { spaOrigin = new URL(navPage).origin; } catch (e) { spaOrigin = 'https://example-school.example.com'; }
+            try { spaOrigin = new URL(navPage).origin; } catch (e) { spaOrigin = 'https://nswgy.zyai.cc'; }
 
             var token = ls('navToken') || ls('token');
             var apiHost = (ls('navPageHost') || ls('navApiHost') || '').trim();

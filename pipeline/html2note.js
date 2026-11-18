@@ -97,7 +97,7 @@ const CLOUD_TITLE = (() => {
     return String(v === undefined ? 'ds' : v).trim();
 })();
 const CLOUD_STATE = path.resolve(ROOT, (CFG.cloud && CFG.cloud.stateFile) || '.workbuddy/cloud-seen.json');
-const CLOUD_INTERVAL = (CFG.cloud && CFG.cloud.intervalMs) || 30000;
+const CLOUD_INTERVAL = (CFG.cloud && CFG.cloud.intervalMs) || 10000;
 let cloudNoFolderWarned = false;
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -189,11 +189,12 @@ async function convertOne(browser, htmlPath, pdfPath) {
         const expectPages = strict ? shape.pages : (shape.breaks > 0 ? shape.breaks : 0);
         const okPages = n => !expectPages || (strict ? n === expectPages : Math.abs(n - expectPages) <= 1);
 
-        let buf = null, pages = 0, tries = 0;
-        for (; tries < 3; tries++) {
-            // 强制?print 媒体，否?body 的屏幕样式（padding/阴影）会把一页挤?2×2 ?
-            await browser.send('Emulation.setEmulatedMedia', { media: 'print' }, sessionId);
-            await sleep(250);
+        let buf = null, pages = 0;
+        // 只有在「页数比预期少」（说明页面丢内容）时才值得重打一遍。
+        // 长题干/长解析本来就可能多出页，这种情况原来也会白跑一轮 printToPDF（约 +2.5s）。
+        await browser.send('Emulation.setEmulatedMedia', { media: 'print' }, sessionId);
+        await sleep(250);
+        for (let attempt = 0; attempt < 2; attempt++) {
             const pr = await browser.send('Page.printToPDF', {
                 preferCSSPageSize: true,
                 printBackground: true,
@@ -202,8 +203,8 @@ async function convertOne(browser, htmlPath, pdfPath) {
             if (pr.error) throw new Error('Page.printToPDF 失败: ' + JSON.stringify(pr.error));
             buf = Buffer.from(pr.result.data, 'base64');
             pages = countPdfPages(buf);
-            if (okPages(pages)) break;
-            await sleep(700);
+            if (!expectPages || pages >= expectPages) break;   // 多了也算成功（跨页属正常）
+            await sleep(400);
         }
         if (!okPages(pages)) {
             // 内容本身超出一页（长题干/长解析）属正常，按实际页数继续；少于期望才是真异常（页面丢了）
@@ -230,6 +231,46 @@ async function findToolboxPage() {
     return t;
 }
 
+// 8088 挂掉时 Chrome 会把标签页换成 chrome-error://chromewebdata/（opaque origin），
+// 但 CDP /json/list 里的 url 仍是 http://127.0.0.1:8088/，会被上面误选中。
+// 此时读 localStorage 会抛 SecurityError，所以连上后先做一次可用性检查。
+async function checkPageUsable(cdpPage) {
+    const v = await evalIn(cdpPage, `(function(){
+        try {
+            localStorage.getItem('token');
+            return JSON.stringify({ ok: true, origin: window.origin, href: location.href });
+        } catch (e) {
+            return JSON.stringify({ ok: false, reason: String(e && e.message || e), href: location.href });
+        }
+    })()`);
+    let s;
+    try { s = JSON.parse(v); } catch (_) { s = { ok: false, reason: '页面返回值无法解析' }; }
+    if (!s.ok) {
+        throw new Error(
+            `工具箱页面不可读（${s.reason}）：多半是 8088 服务没启动、标签页停在 Chrome 错误页。` +
+            `请先启动 node .work\\serve.js 8088，再刷新该标签页（当前 URL：${s.href || '未知'}）。`
+        );
+    }
+}
+
+// 服务端限流（503「操作太频繁」）时不要直接判失败：退避重试，别把一份文件废掉。
+async function withApiRetry(label, fn, tries) {
+    tries = tries || 3;
+    let last;
+    for (let i = 0; i < tries; i++) {
+        try { return await fn(); }
+        catch (e) {
+            last = e;
+            const m = String((e && e.message) || e);
+            if (!/操作太频繁|503|429|too many/i.test(m)) throw e;
+            const wait = 3000 * (i + 1);
+            console.log(`[限流] ${label} 被限流，${wait / 1000}s 后重试（${i + 1}/${tries}）`);
+            await sleep(wait);
+        }
+    }
+    throw last;
+}
+
 async function getAllNotes(cdp) {
     const v = await evalIn(cdp, `(async()=>{
         const r = await fetch(window.API_BASE_URL + '/CloudNotes/api/Notes/GetAll', {headers:{Authorization:'Bearer '+localStorage.getItem('token')}});
@@ -249,17 +290,24 @@ const AUTH_MARGIN_MS = 5 * 60 * 1000;   // 剩余不足 5 分钟就当作要续�
 
 async function readAuthState(cdp) {
     const v = await evalIn(cdp, `(function(){
-        var t = localStorage.getItem('token') || '';
-        var exp = 0;
-        try { exp = JSON.parse(atob(t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))).exp * 1000; } catch (e) {}
-        return JSON.stringify({
-            token: t, exp: exp,
-            refreshToken: localStorage.getItem('refreshToken') || '',
-            refreshExp: parseInt(localStorage.getItem('refreshTokenExpire') || '0', 10) || 0,
-            api: localStorage.getItem('apiBaseUrl') || ''
-        });
+        try {
+            var t = localStorage.getItem('token') || '';
+            var exp = 0;
+            try { exp = JSON.parse(atob(t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))).exp * 1000; } catch (e) {}
+            return JSON.stringify({
+                token: t, exp: exp,
+                refreshToken: localStorage.getItem('refreshToken') || '',
+                refreshExp: parseInt(localStorage.getItem('refreshTokenExpire') || '0', 10) || 0,
+                api: localStorage.getItem('apiBaseUrl') || ''
+            });
+        } catch (e) {
+            return JSON.stringify({ __err: '页面 localStorage 不可读：' + String(e && e.message || e) +
+                '。请确认 8088 服务已启动、标签页是工具箱页面而非 Chrome 错误页，然后刷新标签页。' });
+        }
     })()`);
-    return JSON.parse(v);
+    const st = JSON.parse(v);
+    if (st.__err) throw new Error(st.__err);
+    return st;
 }
 
 // 把登?刷新结果写回 localStorage（与网页?login_btn 的写法保持一致）
@@ -368,7 +416,7 @@ async function uploadPdf(cdp, pdfPath, noteTitle) {
     // 0) 登录态（过期会自动刷?重登?
     await ensureAuth(cdp);
 
-    const before = await getAllNotes(cdp);
+    const before = await withApiRetry('GetAll(上传前)', () => getAllNotes(cdp));
     const seen = new Set(before.map(n => n.fileId));
 
     // 1) 注入 File 并触?change
@@ -391,8 +439,8 @@ async function uploadPdf(cdp, pdfPath, noteTitle) {
 
     // 2) 等缩略图就绪
     let strip = '';
-    for (let i = 0; i < 60; i++) {
-        await sleep(1000);
+    for (let i = 0; i < 240; i++) {
+        await sleep(250);
         strip = await evalIn(cdp, `(document.getElementById('pdfRotStatus')||{}).textContent||''`);
         if (/共\s*\d+\s*页/.test(String(strip))) break;
     }
@@ -407,14 +455,14 @@ async function uploadPdf(cdp, pdfPath, noteTitle) {
 
     // 4) 轮询进度
     let progress = '';
-    for (let i = 0; i < 180; i++) {
-        await sleep(1000);
+    for (let i = 0; i < 720; i++) {
+        await sleep(250);
         progress = await evalIn(cdp, `(document.getElementById('pdfProgressText')||{}).textContent||''`);
         if (/上传完成|失败|错误/.test(String(progress))) break;
     }
 
-    await sleep(1500);
-    const after = await getAllNotes(cdp);
+    await sleep(400);
+    const after = await withApiRetry('GetAll(上传后)', () => getAllNotes(cdp));
     const fresh = after.filter(n => !seen.has(n.fileId));
 
     if (/失败|错误/.test(String(progress))) {
@@ -620,7 +668,7 @@ async function downloadOne(cdp, note) {
 // 丢轮云笔记棢查：首次只建基线；之后只处理「目标文件夹内的新增
 async function cloudRound(cdp) {
     const cst = loadCloudState();
-    const all = await fetchCloudNotes(cdp);
+    const all = await withApiRetry('GetAll(云笔记巡检)', () => fetchCloudNotes(cdp));
 
     const scope = resolveCloudScope(all, CLOUD_FOLDER);
     if (scope.missing) {
@@ -703,6 +751,7 @@ async function processOne(browser, cdpPage, h, state) {
 
     const title = titleNow();
     try {
+        global.__lastUploadAt = Date.now();
         const note = await uploadPdf(cdpPage, pdfPath, title);
         state[rel] = { htmlSha: sha, pdf: path.relative(ROOT, pdfPath).replace(/\\/g, '/'), pages: note.pages, pdfBytes: note.bytes, note: { fileId: note.fileId, title: note.title, createTime: note.createTime }, at: new Date().toISOString() };
         saveState(state);
@@ -717,6 +766,13 @@ async function processOne(browser, cdpPage, h, state) {
 async function openTargets() {
     const browser = await Cdp.open((await (await fetch(CDP + '/json/version')).json()).webSocketDebuggerUrl);
     const cdpPage = await Cdp.open((await findToolboxPage()).webSocketDebuggerUrl);
+    try {
+        await checkPageUsable(cdpPage);
+    } catch (e) {
+        try { browser.close(); } catch (_) { }
+        try { cdpPage.close(); } catch (_) { }
+        throw e;
+    }
     return { browser, cdpPage };
 }
 
@@ -779,8 +835,13 @@ async function runWatch() {
 
     // 进入常驻后，控制台输出同时写入按天切分的日志
     const origLog = console.log.bind(console), origErr = console.error.bind(console);
-    console.log = (...a) => { origLog(...a); appendLog(a.join(' ')); };
-    console.error = (...a) => { origErr(...a); appendLog('[ERR] ' + a.join(' ')); };
+    // 控制台每行也带时间（HH:MM:SS）；文件里仍由 appendLog 写完整日期
+    const clock = () => {
+        const d = new Date();
+        return `[${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}]`;
+    };
+    console.log = (...a) => { origLog(clock(), ...a); appendLog(a.join(' ')); };
+    console.error = (...a) => { origErr(clock(), ...a); appendLog('[ERR] ' + a.join(' ')); };
 
     if (FORCE) console.log('[提示] --watch 下忽略 --force（避免同一个文件被无限重传），需要重传请先退出再单跑 --force');
 
@@ -864,9 +925,12 @@ async function runWatch() {
     // 云笔记：只读棢?+ 下载。启动先跑一轮，之后挂在 rescan 分支里按 CLOUD_INTERVAL 节流
     let cloudNextAt = 0;
     let cloudBusy = false;
+    let rateLimitBackoff = 0;
+    let lastCloudErr = '';   // 连续相同错误只报一次，避免 30 秒一轮刷屏
     const runCloud = async (why) => {
         if (stopping || cloudBusy) return;
         cloudBusy = true;
+        const startedAt = Date.now();
         let t = null;
         try {
             t = await openTargets();
@@ -876,11 +940,29 @@ async function runWatch() {
                 await ensureAuth(t.cdpPage);
             }
             await cloudRound(t.cdpPage);
+            if (lastCloudErr) {
+                console.log('[云笔记] 页面已恢复，继续巡检');
+                lastCloudErr = '';
+            }
         } catch (e) {
-            console.log(`[云笔记] 本轮出错：${e.message}`);
+            const msg = e.message || String(e);
+            if (msg !== lastCloudErr) {
+                const hint = /is not valid JSON|undefined/.test(msg)
+                    ? '（页面 key 可能还是前一天的：在 Chrome 里刷新页面即可，下一轮自动恢复）'
+                    : '';
+                if (/操作太频繁|503|429/.test(String(msg))) {
+                    rateLimitBackoff = 60000;
+                    console.log('[云笔记] 被服务端限流，下一轮推迟 60s');
+                }
+                console.log(`[云笔记] 本轮出错：${msg}${hint}`);
+                lastCloudErr = msg;
+            }
         } finally {
             cloudBusy = false;
-            cloudNextAt = Date.now() + CLOUD_INTERVAL;
+            // 节拍按「本轮开始 + 间隔」算。原来 tick 周期是 interval、nextAt 又从结束时刻再加一个 interval，
+            // 两次叠加导致实际间隔翻倍（配置 10 秒却每 20 秒才跑一轮）。
+            cloudNextAt = rateLimitBackoff ? Date.now() + rateLimitBackoff : startedAt + CLOUD_INTERVAL;
+            rateLimitBackoff = 0;
             if (t) {
                 try { t.browser.close(); } catch (_) { }
                 try { t.cdpPage.close(); } catch (_) { }
@@ -910,15 +992,22 @@ async function runWatch() {
         const n = enqueue(listHtml());
         if (n) console.log(`[扫描] 发现 ${n} 个待处理文件（目录内共 ${listHtml().length} 个 HTML）`);
         pump();
-        if (CLOUD && !stopping && !cloudBusy && Date.now() >= cloudNextAt) {
-            runCloud('rescan');
-        }
     }, WATCH_INTERVAL);
+
+    // 云笔记用独立节拍（CLOUD_INTERVAL），否则会被 rescan 的 30 秒卡住
+    let cloudTimer = null;
+    if (CLOUD) {
+        cloudTimer = setInterval(() => {
+            if (!stopping && !cloudBusy && Date.now() >= cloudNextAt
+                && Date.now() - (global.__lastUploadAt || 0) > 20000) runCloud('timer');
+        }, 1000);   // 1 秒一跳：是否开跑由 cloudNextAt 决定，避免周期与间隔叠加
+    }
 
     const shutdown = sig => {
         if (stopping) return;
         stopping = true;
         clearInterval(timer);
+        if (cloudTimer) clearInterval(cloudTimer);
         clearTimeout(debounce);
         try { watcher.close(); } catch (_) { }
         console.log(`[退出] 收到 ${sig}，处理完当前文件后?出?`);

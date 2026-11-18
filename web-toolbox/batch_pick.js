@@ -489,7 +489,7 @@
     /**
      * 取单篇笔记的资源列表。
      * 端点有多套（与 index.js 的 getCloudNoteApiPathR / noteDownload2 保持一致，
-     * 省锡中走 /special/ 代理，其它学校走 CloudNotes 原生路径），逐个尝试；
+     * 走中转时用 /special/ 代理，否则走 CloudNotes 原生路径），逐个尝试；
      * 失败时把 HTTP 状态和响应片段带进错误信息，便于定位。
      */
     async resources(fileId) {

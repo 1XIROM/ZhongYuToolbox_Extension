@@ -24,7 +24,7 @@
     <script src="pdf.worker.min.js"></script>
     <script>if (window.pdfjsLib) { window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdf.worker.min.js'; }</script>
     <script src="pdf-templates.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+    <script src="fabric.min.js?v=1"></script>
     <link rel="stylesheet" type="text/css" href="sweetalert.css">
     <script type="text/javascript" src="sweetalert-dev.js"></script>
 <style>
@@ -48,20 +48,11 @@
 </head>
 
 <body>
-    <script>
-var _hmt = _hmt || [];
-(function() {
-  var hm = document.createElement("script");
-  hm.src = "https://hm.baidu.com/hm.js?bff64ab64cafdee808e9f3fb6aaab90b";
-  var s = document.getElementsByTagName("script")[0]; 
-  s.parentNode.insertBefore(hm, s);
-})();
-</script>
 
     <div class="alert alert-dismissible alert-light" id="announcement_block">
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         <div id="announcement">
-            <strong>公告</strong> This <a href="https://<web-host>/index.html#" class="alert-link">alert needs
+            <strong>公告</strong> This <a href="https://gl.zytb.loshop.com.cn/index.html#" class="alert-link">alert needs
                 your attention</a>, but it's
             not super
             important.
@@ -297,15 +288,9 @@ var _hmt = _hmt || [];
                                 <div class="card-body">
                                     <h1 id="welc"></h1>
                                     <div class="form-group mb-3">
-                                        <label for="school_select">学校</label>
-                                        <select id="school_select" class="form-select" onchange="onSchoolChange()">
-                                            <option value="sxz">省锡中</option>
-                                            <option value="other">其它学校</option>
-                                        </select>
-                                    </div>
-                                    <div class="form-group mb-3" id="school_code_group" style="display:none;">
                                         <label for="school_code">学校代码</label>
-                                        <input id="school_code" type="text" class="form-control" placeholder="输入学校代码">
+                                        <input id="school_code" type="text" class="form-control" placeholder="输入学校代码" autocomplete="off" autocapitalize="off" spellcheck="false">
+                                        <small class="form-text text-muted">登录时用它向服务器查询该校接口地址</small>
                                     </div>
                                     <div class="form-group mb-3">
                                         <label for="account">用户名</label>
@@ -432,7 +417,7 @@ var _hmt = _hmt || [];
                         <div class="tab-pane fade show active" id="dir" role="tabpanel">
                             <div class="d-flex justify-content-end align-items-center mt-2">
                                 <a id="dir_cloudnote" class="btn btn-outline-success btn-sm" href="javascript:void(0)"
-                                    title="在新标签页打开教务系统登录页（https://学校代码.example.com/#/login）；不再在当前页内切换云笔记路由"
+                                    title="在新标签页打开教务系统登录页（https://学校代码.zyai.cc/#/login）；不再在当前页内切换云笔记路由"
                                     onclick="return window.zxzl_openLoginPage(event, 'dir_cloudnote_msg')">
                                     教务系统云笔记
                                 </a>
@@ -520,14 +505,14 @@ var _hmt = _hmt || [];
                                         <!-- 笔记名称输入 -->
                                         <div class="mb-3">
                                             <label for="pdfNoteName" class="form-label">笔记名称</label>
-                                            <input type="text" class="form-control" id="pdfNoteName" 
+                                            <input type="text" class="form-control" id="pdfNoteName"
                                                    placeholder="请输入笔记名称（自动填充PDF文件名）">
                                         </div>
 
                                         <!-- PDF文件选择 -->
                                         <div class="mb-3">
                                             <label for="pdfFileInput" class="form-label">选择PDF文件</label>
-                                            <input type="file" class="form-control" id="pdfFileInput" 
+                                            <input type="file" class="form-control" id="pdfFileInput"
                                                    accept=".pdf" onchange="handlePdfSelect(event)">
                                             <div id="pdfFileInfo" class="mt-2"></div>
                                         </div>
@@ -535,8 +520,8 @@ var _hmt = _hmt || [];
                                         <!-- 进度条 -->
                                         <div class="mb-3">
                                             <div class="progress" style="height: 25px;">
-                                                <div id="pdfProgress" class="progress-bar progress-bar-striped progress-bar-animated" 
-                                                     role="progressbar" style="width: 0%;" 
+                                                <div id="pdfProgress" class="progress-bar progress-bar-striped progress-bar-animated"
+                                                     role="progressbar" style="width: 0%;"
                                                      aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
                                             </div>
                                             <small id="pdfProgressText" class="text-muted">等待上传...</small>
@@ -581,7 +566,7 @@ var _hmt = _hmt || [];
                                         <!-- 预览区域 -->
                                         <div class="mb-3">
                                             <label class="form-label">预览（前5页）</label>
-                                            <div id="pdfPreviewContainer" class="border rounded p-3" 
+                                            <div id="pdfPreviewContainer" class="border rounded p-3"
                                                  style="max-height: 400px; overflow-y: auto; background: #f8f9fa;">
                                                 <p class="text-muted text-center">预览将在此显示...</p>
                                             </div>
@@ -654,7 +639,7 @@ var _hmt = _hmt || [];
                     专栏接口诊断
                 </a>
                 <a id="zxzl_newtab" class="btn btn-outline-secondary btn-sm mt-2 mb-2 me-2" href="javascript:void(0)" title="在新标签页直接打开在线专栏（navPage + 专栏 token，默认 /list 列表）" onclick="window.open(window.navSrc());return false;">在新页面打开</a>
-                <a id="zxzl_login" class="btn btn-outline-primary btn-sm mt-2 mb-2 me-3" href="javascript:void(0)" onclick="return window.zxzl_openLoginPage(event)" title="在新标签页打开教务系统登录页（https://学校代码.example.com/#/login），不再预热 cookie、不再跳云笔记路由">云笔记·新窗口</a>
+                <a id="zxzl_login" class="btn btn-outline-primary btn-sm mt-2 mb-2 me-3" href="javascript:void(0)" onclick="return window.zxzl_openLoginPage(event)" title="在新标签页打开教务系统登录页（https://学校代码.zyai.cc/#/login），不再预热 cookie、不再跳云笔记路由">云笔记·新窗口</a>
             </div>
             <iframe id="zxzl_iframe"
                 src="about:blank"
@@ -670,7 +655,7 @@ var _hmt = _hmt || [];
                 </a>
             </div>
             <iframe id="ck_iframe"
-                src="http://<relay-host>/navPage.html%3FapiHost=https:%252F%252F<relay-host>&amp;apiToken=.html"
+                src="about:blank"
                 style="width:100%;height:calc(100% - 40px);border:none;display:block;"></iframe>
         </div>
         <div class="tab-pane fade" id="Mistake">
@@ -1102,7 +1087,7 @@ var _hmt = _hmt || [];
                                         <td>
                                             <div style="float:right">
                                                 <a type="button" class="btn btn-success"
-                                                    href="http://sxz.school.example.com/navPage.html?apiHost=http%3A%2F%2F<api-host>&schoolCode=sxz#/downloadPage">下载
+                                                    href="http://sxz.school.zykj.org/navPage.html?apiHost=http%3A%2F%2Fsxz.api.zykj.org&schoolCode=sxz#/downloadPage">下载
                                                 </a>
                                             </div>
                                         </td>
@@ -1671,13 +1656,13 @@ var _hmt = _hmt || [];
     </div>
 
     <script src="DPlayer.min.js"></script>
-    <script src="index.js?v=25"></script>
+    <script src="index.js?v=26"></script>
     <script src="pdf-upload.js?v=15"></script>
     <script src="linspirer.js?v=2"></script>
     <script src="batch_pick.js?v=7"></script>
-    <script src="share_read.js?v=8"></script>
-    <script src="column_read.js?v=7"></script>
-<script src="column_batch.js?v=4"></script>
+    <script src="share_read.js?v=9"></script>
+    <script src="column_read.js?v=8"></script>
+<script src="column_batch.js?v=5"></script>
 
     <script>
         $("form .dropdown-item").click(function () {
