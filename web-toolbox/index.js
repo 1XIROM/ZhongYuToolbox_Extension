@@ -1393,7 +1393,7 @@ async function mistake_query() {
                             answerEl.querySelectorAll('h3').forEach(h => h.remove());
                             const answerHTML = answerEl.innerHTML.trim();
                             if (answerHTML) {
-                                $("#mistakeAnsBody").html(answerHTML);
+                                $("#mistakeAnsBody").html((window.answerChipsHTML ? window.answerChipsHTML(answerHTML, stem) : null) || answerHTML);
                                 $("#mistakeAnsCard").show();
                             }
                         }
@@ -4254,6 +4254,19 @@ async function fetchExams(page = 1) {
     renderExamPagination();
 }
 
+// 测评时间显示：统一 YYYY-MM-DD HH:mm；空值 / 全零日期显示「待定」
+function fmtExamTime(v) {
+    if (v === null || v === undefined) return '待定';
+    var s = String(v).trim();
+    if (!s || /^(null|undefined)$/i.test(s)) return '待定';
+    if (/^0{4}-0{1,2}-0{1,2}/.test(s)) return '待定';
+    var m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})[ T](\d{1,2}):(\d{2})/);
+    var p = function (n) { return String(n).padStart(2, '0'); };
+    if (!m) return s.replace('T', ' ').slice(0, 16);
+    if (Number(m[1]) < 1900) return '待定';   // 0001-01-01 这类「未设置」的默认值
+    return m[1] + '-' + p(m[2]) + '-' + p(m[3]) + ' ' + p(m[4]) + ':' + m[5];
+}
+
 function renderExamPage(exams) {
     const examList = document.getElementById('examList');
     examList.innerHTML = '';
@@ -4273,12 +4286,21 @@ function renderExamPage(exams) {
         const nameSpan = document.createElement('span');
         nameSpan.textContent = e.examName;
         nameSpan.style.cursor = 'pointer';
-        nameSpan.style.flex = '1 1 auto';
-        nameSpan.style.minWidth = '120px';
         nameSpan.onclick = () => showExamQuestions(e.examName, examTaskId, examId);
         nameSpan.setAttribute('data-bs-toggle', 'modal');
         nameSpan.setAttribute('data-bs-target', '#examModal');
-        div.appendChild(nameSpan);
+
+        // 时间行：统一 YYYY-MM-DD HH:mm，缺失显示「待定」
+        const metaSpan = document.createElement('small');
+        metaSpan.className = 'text-muted d-block mt-1';
+        metaSpan.textContent = '开始 ' + fmtExamTime(e.startTime) + ' · 结束 ' + fmtExamTime(e.endTime);
+
+        const wrap = document.createElement('div');
+        wrap.style.flex = '1 1 auto';
+        wrap.style.minWidth = '120px';
+        wrap.appendChild(nameSpan);
+        wrap.appendChild(metaSpan);
+        div.appendChild(wrap);
         examList.appendChild(div);
     });
 }
@@ -4309,6 +4331,28 @@ function goToExamPage(totalPages) {
     fetchExams(page);
 }
 
+// 快捷对答案：只显示「题号.答案」，每行 5 题，顿号分隔；再点一次返回题目
+window.toggleQuickAnswers = function () {
+    var body = document.getElementById('examModalBody');
+    if (!body) return;
+    if (body.dataset.qa === '1') {
+        body.innerHTML = window.__examBodyBackup || '';
+        body.dataset.qa = '';
+        return;
+    }
+    var qs = window.__examQuestions || [];
+    if (!qs.length) { alert('题目还没加载完，稍等一下再点'); return; }
+    window.__examBodyBackup = body.innerHTML;
+    body.dataset.qa = '1';
+    body.innerHTML = '<div class="qa-panel">'
+        + '<div class="qa-head"><span class="qa-title">快捷对答案（共 ' + qs.length + ' 题）</span>'
+        + '<button class="btn btn-sm btn-outline-primary" onclick="toggleQuickAnswers()">返回题目</button></div>'
+        + window.answerQuickViewHTML(qs.map(function (q) {
+            return { number: q.number, answer: q.answerRaw || q.answer };
+        }), 5)
+        + '<div class="qa-tip">每行 5 题，格式为「题号.答案」；多选题连写（如 ABC）。</div></div>';
+};
+
 async function showExamQuestions(examName, examTaskId, examId) {
     const token = localStorage.getItem("token");
     const modalLabel = document.getElementById('examModalLabel');
@@ -4325,6 +4369,13 @@ async function showExamQuestions(examName, examTaskId, examId) {
     modalBody.innerHTML = `<div class="text-center py-3 text-muted"><div class="spinner-border text-primary" role="status"></div><div class="mt-2">加载中...</div></div>`;
 
     const exam = await fetchExamTask(token, examTaskId);
+    const r0 = (exam && exam.result) || {};
+    const metaHtml = `<div class="d-flex flex-wrap gap-3 small text-muted mb-2">
+            <span>开始 <span class="text-body fw-semibold">${fmtExamTime(r0.startTime)}</span></span>
+            <span>结束 <span class="text-body fw-semibold">${fmtExamTime(r0.endTime)}</span></span>
+            <span>题量 <span class="text-body fw-semibold">${(r0.qstCount === null || r0.qstCount === undefined) ? '-' : r0.qstCount}</span></span>
+            <button class="btn btn-sm btn-outline-secondary" onclick="event.stopPropagation();toggleQuickAnswers()">快捷对答案</button>
+        </div>`;
     const questions = [];
     let idx = 1;
 
@@ -4362,17 +4413,20 @@ async function showExamQuestions(examName, examTaskId, examId) {
                 }
             }
 
-            questions.push({ number: idx, stem, answer: answerHTML, explanation: explanationHTML, knowledge: knowledgeHTML });
+            const answerView = (window.answerChipsHTML ? window.answerChipsHTML(answerHTML, stem) : null) || answerHTML;
+            questions.push({ number: idx, stem, answer: answerView, answerRaw: answerHTML, explanation: explanationHTML, knowledge: knowledgeHTML });
             idx++;
         }
     }
 
+    window.__examQuestions = questions;
+
     if (!questions.length) {
-        modalBody.innerHTML = `<div class="text-center text-muted py-3">没有题目</div>`;
+        modalBody.innerHTML = metaHtml + `<div class="text-center text-muted py-3">没有题目</div>`;
         return;
     }
 
-    let html = '<div class="container-fluid">';
+    let html = metaHtml + '<div class="container-fluid">';
     questions.forEach(q => {
         html += `
                     <div class="card mb-3">
@@ -5076,7 +5130,8 @@ async function loadEvaluationQuestions(urls) {
                     knowledgeHTML = second.innerHTML.trim();
                 }
             }
-            return { stem, answerHTML, explanationHTML, knowledgeHTML };
+            const answerView = (window.answerChipsHTML ? window.answerChipsHTML(answerHTML, stem) : null) || answerHTML;
+            return { stem, answerHTML: answerView, explanationHTML, knowledgeHTML };
         });
         const questions = await Promise.all(promises);
         let qHtml = '<div class="container-fluid">';
