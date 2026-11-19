@@ -236,16 +236,21 @@ async function convertPdfToImages(pdfFile, onProgress, autoRotate) {
     return await convertPdfToImagesServer(pdfFile, onProgress);
 }
 
-// 笔记页画布尺寸：取自模板 example/res/image/*.webp 两张样例，均为 2880x1800
+// 笔记页画布尺寸：比例取自 App 实际可视区。
+// 截图 1914x1090，左侧工具栏占 134px，去掉后可视区 1780x1087 = 1.6375。
+// 2880 / 1.6375 ≈ 1759 —— 这样页面图与 App 可视区同比例，缩放后不产生黑边。
 var CANVAS_W = 2880;
-var CANVAS_H = 1800;
+var CANVAS_H = 1759;
+
+// 页面四周的「安全边」：占画布宽/高的比例，用来避开 App 的浮动工具栏。
+// 左侧竖条 134/1914 = 7.0%，顶部横条（页码 + 右上按钮）73/1090 = 6.7%。
+// 默认 0：画布本身已按「可视区」取比例，工具栏落在可视区之外。
+// 若在 App 里发现内容仍被工具栏压住，把 left / top 调成 0.07 / 0.067 即可。
+var PAGE_SAFE = { left: 0, top: 0, right: 0, bottom: 0 };
 
 // 页面在画布里的摆放方式。只影响「页面图长什么样」，不动模板与资源结构。
-// 想改留白 / 底色 / 对齐，改这里就够，不用碰下面的渲染代码。
-// 注意：CANVAS_W/H 的比例（16:10）是 App 页面框的比例，改比例会让 App 里
-// 二次留白或被裁切，除非确认过模板，否则别动宽高，只调 margin / bg / align。
 var PAGE_FIT = {
-    margin: 0,          // 四周额外留白占画布短边的比例：0 = 贴满；0.02 = 各留 2%
+    margin: 0,          // 在安全边之内再加一圈留白（占画布短边比例）：0 = 贴满
     bg: '#ffffff',      // 页面底色（留白处显示这个色）
     alignX: 'center',   // left | center | right
     alignY: 'center',   // top  | center | bottom
@@ -261,7 +266,7 @@ function pageAlignOffset(space, mode) {
 }
 
 // ---------------- 自动旋转 ----------------
-// 画布固定 16:10 横版（2880x1800），PDF 页面可能横竖混排。
+// 画布按 App 可视区取比例（2880x1759 ≈ 1.6375），PDF 页面可能横竖混排。
 // 老版本按“转 0°/90° 谁把画布填得更满”判定，结果任何竖版页（如 A4 595x842）
 // 都会被转 90°，App 里看到的就是整页文字侧躺——旋转功能反而是坏的。
 // 现在只看页面内容本身，只有“内容确实横躺着”才转：
@@ -605,7 +610,7 @@ async function renderPdfLocally(pdfFile, onProgress, autoRotate) {
             var page = await pdf.getPage(p);
             var raw = page.getViewport({ scale: 1 });
 
-            // 关键：笔记页的画布是固定的 2880x1800（模板里两张样例截图都是这个尺寸），
+            // 关键：笔记页的画布是固定的 CANVAS_W×CANVAS_H（比例对齐 App 可视区），
             // 图片超出部分会被裁掉。所以整页要等比缩放后完整放进画布。
             // 留白多少、底色、左右/上下对齐由 PAGE_FIT 控制（见文件上方）。
             var canvas = document.createElement('canvas');
@@ -626,16 +631,21 @@ async function renderPdfLocally(pdfFile, onProgress, autoRotate) {
             var fitW = (extraRot % 180) ? raw.height : raw.width;
             var fitH = (extraRot % 180) ? raw.width : raw.height;
             // 先按 PAGE_FIT.margin 收出可用区域，再等比缩放，保证整页完整可见、不被裁切
+            // 可用区域 = 画布 − 安全边 − 统一留白；页面在其中等比缩放，再按 align 摆放
             var marginPx = Math.round(Math.min(CANVAS_W, CANVAS_H) * PAGE_FIT.margin);
-            var availW = Math.max(1, CANVAS_W - marginPx * 2);
-            var availH = Math.max(1, CANVAS_H - marginPx * 2);
+            var inL = Math.round(CANVAS_W * PAGE_SAFE.left) + marginPx;
+            var inR = Math.round(CANVAS_W * PAGE_SAFE.right) + marginPx;
+            var inT = Math.round(CANVAS_H * PAGE_SAFE.top) + marginPx;
+            var inB = Math.round(CANVAS_H * PAGE_SAFE.bottom) + marginPx;
+            var availW = Math.max(1, CANVAS_W - inL - inR);
+            var availH = Math.max(1, CANVAS_H - inT - inB);
             var fit = Math.min(availW / fitW, availH / fitH);
             var viewport = extraRot
                 ? page.getViewport({ scale: fit, rotation: baseRot + extraRot })
                 : page.getViewport({ scale: fit });
             if (extraRot) rotatedPages.push(p);
-            var dx = marginPx + Math.round(pageAlignOffset(availW - viewport.width, PAGE_FIT.alignX));
-            var dy = marginPx + Math.round(pageAlignOffset(availH - viewport.height, PAGE_FIT.alignY));
+            var dx = inL + Math.round(pageAlignOffset(availW - viewport.width, PAGE_FIT.alignX));
+            var dy = inT + Math.round(pageAlignOffset(availH - viewport.height, PAGE_FIT.alignY));
             if (dx < 0) { dx = 0; }
             if (dy < 0) { dy = 0; }
 
