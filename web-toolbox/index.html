@@ -545,6 +545,19 @@
                                             </div>
                                         </div>
 
+                                        <!-- 填充优先：竖版页在横版画布上只占约 44% 宽，转 90° 能放大约 1.6 倍 -->
+                                        <div class="mb-3">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" id="pdf_fillrotate" checked onchange="onPdfFillRotateToggle()">
+                                                <label class="form-check-label" for="pdf_fillrotate">
+                                                    竖版页自动转 90° 填满（文字会侧躺）
+                                                </label>
+                                                <div class="form-text">
+                                                    竖版页（A4 等）等比缩放进横版画布后左右各留一大片白，只占约 44% 宽度。勾选后自动转 90°，内容放大约 1.6 倍，代价是要歪头看。只对竖版页生效，横版页不受影响；下面的缩略图仍可逐页改。
+                                                </div>
+                                            </div>
+                                        </div>
+
                                         <!-- 逐页手动旋转：自动判定只给默认值，最终以这里的缩略图为准 -->
                                         <div class="mb-3" id="pdfRotPanel" style="display:none;">
                                             <label class="form-label">页面方向（缩略图就是上传后的样子）</label>

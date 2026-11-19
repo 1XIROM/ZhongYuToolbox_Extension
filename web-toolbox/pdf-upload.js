@@ -383,6 +383,35 @@ function isAutoRotateOn() {
     return el ? !!el.checked : true;
 }
 
+// ---------------- 填充优先：竖版页转 90° ----------------
+// 竖版页（A4 等）放进横版画布，等比缩放后左右各留一大片白，实际只占约 44% 宽。
+// 转 90° 能把内容放大约 1.6 倍，代价是文字侧躺——所以做成开关，默认开。
+function fillRotateDecision(pageW, pageH) {
+    if (!(pageH > pageW)) return 0;                        // 只处理竖版页
+    if (pageH / pageW < ROT_MIN_ASPECT) return 0;          // 接近正方形，转了也没收益
+    if (!(CANVAS_W > CANVAS_H)) return 0;                  // 画布本身是竖版时不做
+    return 90;
+}
+
+function isFillRotateOn() {
+    var el = document.getElementById('pdf_fillrotate');
+    return el ? !!el.checked : true;
+}
+
+// 勾选变化：重新按新策略算默认角度（会丢弃已手动改过的角度）
+async function onPdfFillRotateToggle() {
+    if (currentPdfFile) {
+        await preparePdfRotation(currentPdfFile);
+    }
+}
+
+// 先按内容朝向判（内容侧躺才转正），再叠加「填充优先」策略
+async function decidePageRotation(page, w, h, autoRotate, baseRot) {
+    var rot = await pickPageRotation(page, w, h, autoRotate, baseRot);
+    if (!rot && isFillRotateOn()) rot = fillRotateDecision(w, h);
+    return rot;
+}
+
 // 勾选状态变化：重新按新策略算一遍默认角度（会丢弃已手动改过的角度）
 async function onPdfAutoRotateToggle() {
     if (currentPdfFile) {
@@ -470,7 +499,7 @@ async function preparePdfRotation(file) {
             var page = await doc.getPage(i + 1);
             var raw = page.getViewport({ scale: 1 });
             var baseRot = (typeof page.rotate === 'number') ? page.rotate : 0;
-            st.auto[i] = await pickPageRotation(page, raw.width, raw.height, autoOn, baseRot);
+            st.auto[i] = await decidePageRotation(page, raw.width, raw.height, autoOn, baseRot);
             st.angles[i] = st.auto[i];
             st.thumbs[i] = await renderPdfThumb(page, baseRot, st.angles[i]);
             if (status) status.textContent = '正在生成页面缩略图... ' + (i + 1) + '/' + shown;
@@ -625,7 +654,7 @@ async function renderPdfLocally(pdfFile, onProgress, autoRotate) {
             // 用户在上传面板里逐页调过的角度优先；没调过才用自动判定
             var extraRot = manualRotationFor(p, pdfFile);
             if (extraRot === null) {
-                extraRot = await pickPageRotation(page, raw.width, raw.height, autoRotate, baseRot);
+                extraRot = await decidePageRotation(page, raw.width, raw.height, autoRotate, baseRot);
             }
             // 转 90/270 时长宽互换，缩放比例要按转完之后的方向算，否则页面会缩得很小
             var fitW = (extraRot % 180) ? raw.height : raw.width;
