@@ -240,6 +240,26 @@ async function convertPdfToImages(pdfFile, onProgress, autoRotate) {
 var CANVAS_W = 2880;
 var CANVAS_H = 1800;
 
+// 页面在画布里的摆放方式。只影响「页面图长什么样」，不动模板与资源结构。
+// 想改留白 / 底色 / 对齐，改这里就够，不用碰下面的渲染代码。
+// 注意：CANVAS_W/H 的比例（16:10）是 App 页面框的比例，改比例会让 App 里
+// 二次留白或被裁切，除非确认过模板，否则别动宽高，只调 margin / bg / align。
+var PAGE_FIT = {
+    margin: 0,          // 四周额外留白占画布短边的比例：0 = 贴满；0.02 = 各留 2%
+    bg: '#ffffff',      // 页面底色（留白处显示这个色）
+    alignX: 'center',   // left | center | right
+    alignY: 'center',   // top  | center | bottom
+    quality: 0.92       // 页面图 webp 质量
+};
+
+// 在剩余空间里按对齐方式算偏移（left/top = 0，right/bottom = 全部，其余居中）
+function pageAlignOffset(space, mode) {
+    if (!(space > 0)) return 0;
+    if (mode === 'left' || mode === 'top') return 0;
+    if (mode === 'right' || mode === 'bottom') return space;
+    return space / 2;
+}
+
 // ---------------- 自动旋转 ----------------
 // 画布固定 16:10 横版（2880x1800），PDF 页面可能横竖混排。
 // 老版本按“转 0°/90° 谁把画布填得更满”判定，结果任何竖版页（如 A4 595x842）
@@ -586,12 +606,13 @@ async function renderPdfLocally(pdfFile, onProgress, autoRotate) {
             var raw = page.getViewport({ scale: 1 });
 
             // 关键：笔记页的画布是固定的 2880x1800（模板里两张样例截图都是这个尺寸），
-            // 图片超出部分会被裁掉。所以整页要等比缩放后完整放进画布，居中留白。
+            // 图片超出部分会被裁掉。所以整页要等比缩放后完整放进画布。
+            // 留白多少、底色、左右/上下对齐由 PAGE_FIT 控制（见文件上方）。
             var canvas = document.createElement('canvas');
             canvas.width = CANVAS_W;
             canvas.height = CANVAS_H;
             var ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#ffffff';
+            ctx.fillStyle = PAGE_FIT.bg;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
             // 自动旋转：raw 已经包含 PDF 自带的 /Rotate，这里按内容判朝向，只叠加 0/90/180/270
@@ -604,13 +625,17 @@ async function renderPdfLocally(pdfFile, onProgress, autoRotate) {
             // 转 90/270 时长宽互换，缩放比例要按转完之后的方向算，否则页面会缩得很小
             var fitW = (extraRot % 180) ? raw.height : raw.width;
             var fitH = (extraRot % 180) ? raw.width : raw.height;
-            var fit = Math.min(CANVAS_W / fitW, CANVAS_H / fitH);
+            // 先按 PAGE_FIT.margin 收出可用区域，再等比缩放，保证整页完整可见、不被裁切
+            var marginPx = Math.round(Math.min(CANVAS_W, CANVAS_H) * PAGE_FIT.margin);
+            var availW = Math.max(1, CANVAS_W - marginPx * 2);
+            var availH = Math.max(1, CANVAS_H - marginPx * 2);
+            var fit = Math.min(availW / fitW, availH / fitH);
             var viewport = extraRot
                 ? page.getViewport({ scale: fit, rotation: baseRot + extraRot })
                 : page.getViewport({ scale: fit });
             if (extraRot) rotatedPages.push(p);
-            var dx = Math.floor((CANVAS_W - viewport.width) / 2);
-            var dy = Math.floor((CANVAS_H - viewport.height) / 2);
+            var dx = marginPx + Math.round(pageAlignOffset(availW - viewport.width, PAGE_FIT.alignX));
+            var dy = marginPx + Math.round(pageAlignOffset(availH - viewport.height, PAGE_FIT.alignY));
             if (dx < 0) { dx = 0; }
             if (dy < 0) { dy = 0; }
 
@@ -624,11 +649,15 @@ async function renderPdfLocally(pdfFile, onProgress, autoRotate) {
             await withTimeout(page.render(renderOpts).promise, PDF_RENDER_TIMEOUT_MS, '渲染第 ' + p + ' 页');
 
             var blob = await new Promise(function (resolve) {
-                canvas.toBlob(function (b) { resolve(b); }, 'image/webp', 0.92);
+                canvas.toBlob(function (b) { resolve(b); }, 'image/webp', PAGE_FIT.quality);
             });
             if (!blob) {
+                // 少见的兜底：浏览器不支持 webp 编码时退回 jpeg。
+                // 对象名（NOTE_PAGE_IMAGE）结尾固定 .webp、模板里也这么引用，改不了名，
+                // 所以这里留一条日志，出问题时能立刻确认走的是这条路径。
+                console.warn('[pdf-upload] 第 ' + p + ' 页 webp 编码失败，已退回 jpeg（对象名仍为 .webp）');
                 blob = await new Promise(function (resolve) {
-                    canvas.toBlob(function (b) { resolve(b); }, 'image/jpeg', 0.92);
+                    canvas.toBlob(function (b) { resolve(b); }, 'image/jpeg', PAGE_FIT.quality);
                 });
             }
             if (!blob) throw new Error('第 ' + p + ' 页渲染失败');
@@ -857,17 +886,50 @@ async function patchTemplatesForPage(templates, pageImageBlob) {
 
 // ==================== 文件选择处理 ====================
 
+// PDF 内容校验：真读一下文件头，别只信 MIME / 扩展名。
+// 原来 `file.type.includes('pdf') || name.endsWith('.pdf')` 会把「把 .docx 改成 .pdf」
+// 的文件放进来，要等 pdf.js 解析时才炸，报错也看不懂。PDF 规范允许 %PDF- 前有少量字节，
+// 所以在前 1KB 里找魔数即可。
+var PDF_MAGIC = '%PDF-';
+async function looksLikePdf(file) {
+    try {
+        var buf = await file.slice(0, 1024).arrayBuffer();
+        var bytes = new Uint8Array(buf);
+        var head = '';
+        for (var i = 0; i < bytes.length; i++) head += String.fromCharCode(bytes[i]);
+        return head.indexOf(PDF_MAGIC) >= 0;
+    } catch (e) {
+        return false;
+    }
+}
+
+// 文件大小上限：50MB（只对 PDF 源文件生效，转成页面图后与它无关）
+var PDF_MAX_BYTES = 50 * 1024 * 1024;
+
 async function handlePdfSelect(event) {
     var file = event.target.files[0];
     if (!file) return;
-    if (!file.type.includes('pdf') && !file.name.toLowerCase().endsWith('.pdf')) {
-        swal('请选择PDF文件');
-        return;
+
+    // 被拒时清空 input：否则再次选同一个文件不会触发 change，用户会以为界面卡死
+    function reject(msg) {
+        swal(msg);
+        try { event.target.value = ''; } catch (e) { }
+        currentPdfFile = null;
+        var el = document.getElementById('pdfFileInfo');
+        if (el) el.innerHTML = '';
     }
-    if (file.size > 50 * 1024 * 1024) {
-        swal('PDF文件不能超过50MB');
-        return;
+
+    if (!file.size) return reject('文件是空的（0 字节），请重新选择');
+    if (file.size > PDF_MAX_BYTES) return reject('PDF文件不能超过50MB');
+
+    // 名字/类型像 PDF 但内容不是 → 给可操作的提示；完全不像 → 只说选错格式
+    var byName = /\.pdf$/i.test(file.name) || String(file.type || '').toLowerCase().indexOf('pdf') >= 0;
+    if (!(await looksLikePdf(file))) {
+        return reject(byName
+            ? '这个文件不是有效的 PDF（常见于把 Word / 图片直接改名成 .pdf）。请用「另存为 PDF」或「打印 → 另存为 PDF」重新导出后再上传。'
+            : '请选择 PDF 文件');
     }
+
     currentPdfFile = file;
     var nameInput = document.getElementById('pdfNoteName');
     if (nameInput && !nameInput.value) {

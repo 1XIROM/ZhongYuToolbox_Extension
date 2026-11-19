@@ -2,6 +2,52 @@
 
 按日期倒序。每个条目都能在 `docs/` 里找到对应的复现步骤或验证数据。
 
+## 2026-11-19 — PDF 判断改为校验文件头；页面排版参数化
+
+**判断逻辑**
+
+原来只看 MIME 或扩展名（`file.type.includes('pdf') || name.endsWith('.pdf')`），把 `.docx` 直接改名成 `.pdf` 也能过，要等 pdf.js 解析时才炸，报错还是 `Invalid PDF structure`。现在：
+
+- 新增 `looksLikePdf()`：读前 1024 字节找 `%PDF-` 魔数（规范允许前面有少量字节，所以按偏移查找而不是只看开头）；
+- 校验顺序改成 **空文件 → 超 50MB → 内容是否真 PDF → 放行**；
+- 分别给出了两种提示：名字像 PDF 但内容不是（提示「另存为 PDF」）、完全不是 PDF（只说选错格式）；
+- 被拒时清空 `input.value`，否则再次选同一个文件不触发 `change`，界面像卡死。
+
+**WebP 是否强制**
+
+不是强制，但**文件名写死**：
+
+| 层 | 实际情况 |
+| --- | --- |
+| 编码 | `canvas.toBlob('image/webp', PAGE_FIT.quality)`，失败才回落 jpeg |
+| 对象名 | `NOTE_PAGE_IMAGE` 固定以 `.webp` 结尾（模板 `page_router.bin` 里这么引用，改不了） |
+| 服务端 | 不校验 content-type，OSS PUT 收什么都行 |
+
+所以只有浏览器不支持 webp 编码时才会出现「jpeg 字节 + .webp 名字」的名实不符，已在回落分支加 `console.warn` 便于定位。实测：同一份 PDF 产出 `image/webp` / 55,916 字节。
+
+**排版参数化**
+
+页面图原来把 2880×1800、白底、居中、q0.92 全写死在渲染循环里。现在收成文件顶部的 `PAGE_FIT`：
+
+```js
+var PAGE_FIT = {
+    margin: 0,        // 四周额外留白（占画布短边比例）
+    bg: '#ffffff',    // 页面底色
+    alignX: 'center', // left | center | right
+    alignY: 'center', // top | center | bottom
+    quality: 0.92
+};
+```
+
+渲染处改为按 `margin` 收出可用区域、`pageAlignOffset()` 算对齐偏移；默认值（margin 0 / 白底 / 居中 / 0.92）与改动前几何一致。`CANVAS_W/H` 比例是 App 页面框的比例，注释里已标注「改比例会让 App 二次留白或被裁切」。
+
+**验证**（真实 PDF，无头浏览器本地渲染）
+
+```
+canvas 2880x1800 | pages 1 | type image/webp | 55916 bytes | decoded 2880x1800
+内容包围盒：left 302 / right 305（左右基本对称 → 居中生效）
+```
+
 ## 2026-11-17 — 补齐「谁在读题作答」：新增外部 AI 交接提示词
 
 `pipeline/tools/answer-pipeline/` 一直只负责作答**之后**的环节（渲染、校验、发布、队列），它自己的 README 也写明「它不是 AI 自动答题器」。但「上层怎么读图、按什么格式写稿」这件事此前只存在本地笔记里——别人克隆下来拿到的是一套没有说明书的工具，跑不起来。
