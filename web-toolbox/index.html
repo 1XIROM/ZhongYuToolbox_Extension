@@ -314,14 +314,13 @@
                             <div class="container">
                                 <h4>说明：</h4>
                                 <p>
-                                    本工具用于快捷查看中育账号资源，与中育智慧（无锡）数字技术有限公司及其关联公司无关
+                                    本工具为「中育 ToolBox」网页版工具箱的修改版，基于 Loshop 的上游项目扩展而来
                                     <br>
-                                    开发：
-                                    Loshop
-
-
+                                    登录只需填写学校代码，直接连接学校接口，不经过任何第三方中转
                                     <br>
-                                    如遇问题请及时联系，QQ群：1067807011
+                                    与中育智慧（无锡）数字技术有限公司及其关联公司无关，仅供个人学习研究使用
+                                    <br>
+                                    上游作者：Loshop；本版本的问题请勿反馈给上游
                                 </p>
                             </div>
                         </div>
@@ -346,14 +345,13 @@
                             <div class="container">
                                 <h4>说明：</h4>
                                 <p>
-                                    本工具用于快捷查看中育账号资源，与中育智慧（无锡）数字技术有限公司及其关联公司无关
+                                    本工具为「中育 ToolBox」网页版工具箱的修改版，基于 Loshop 的上游项目扩展而来
                                     <br>
-                                    开发：
-                                    Loshop
-
-
+                                    登录只需填写学校代码，直接连接学校接口，不经过任何第三方中转
                                     <br>
-                                    如遇问题请及时联系，QQ群：1067807011
+                                    与中育智慧（无锡）数字技术有限公司及其关联公司无关，仅供个人学习研究使用
+                                    <br>
+                                    上游作者：Loshop；本版本的问题请勿反馈给上游
                                 </p>
                             </div>
                         </div>
@@ -593,8 +591,8 @@
                                         <div class="alert alert-info mt-3">
                                             <h6>使用说明：</h6>
                                             <ul class="mb-0">
-                                                <li>选择 PDF 后会在<strong>本地渲染</strong>每一页（2880×1800 画布），同时生成逐页缩略图；服务端转换只在本地失败时兜底</li>
-                                                <li>默认<strong>自动判定朝向</strong>（有文字层按文字角度，纯图片页保持 0°）；缩略图上可用 ↺ / ↻ 逐页微调，或「全部左转 / 全部右转 / 恢复自动判定」</li>
+                                                <li>选择 PDF 后会在<strong>本地渲染</strong>每一页（2880×1759 画布，比例对齐 App 可视区），同时生成逐页缩略图；服务端转换只在本地失败时兜底</li>
+                                                <li>默认<strong>自动判定朝向</strong>（有文字层按文字角度，纯图片页保持 0°）；竖版页另有<strong>转 90° 填满</strong>开关（默认开，可关）；缩略图上可用 ↺ / ↻ 逐页微调，或「全部左转 / 全部右转 / 恢复自动判定」</li>
                                                 <li>标题默认是当前时间，可改；点<strong>「开始上传」</strong>后上传为一条云笔记，每页包含模板文件、截图与整页图</li>
                                                 <li>处理过程看进度条与预览；<strong>请保持本页在前台</strong>，后台标签页会被浏览器降频，可能长时间停在 15%（60 秒后会有明确超时提示）</li>
                                                 <li>同一页面会话可连续上传多份 PDF</li>
@@ -1375,8 +1373,9 @@
 <h3 class="text-primary">PDF 上传</h3>
 <p class="text-muted small">把本地 PDF 转成云笔记。这是本仓库改动最多的模块，行为与旧版差别较大。</p>
 <ul>
-<li>选择文件后<strong>本地渲染</strong>每一页（pdf.js，2880×1800 画布），同时生成逐页缩略图；服务端 <code>pdf2img</code> 只在本地渲染失败时兜底</li>
+<li>选择文件后<strong>本地渲染</strong>每一页（pdf.js，2880×1759 画布，比例对齐 App 可视区），同时生成逐页缩略图；服务端 <code>pdf2img</code> 只在本地渲染失败时兜底</li>
 <li><strong>自动判定朝向</strong>：有文字层的页面按文字基线角度判定；纯图片页判不出来就保持 0°，不会硬转</li>
+<li><strong>竖版页转 90° 填满</strong>：A4 竖版放进横版画布只占约 44% 宽，勾选后自动转 90°，内容放大约 1.6 倍（文字会侧躺）；默认开启，可随时关掉</li>
 <li><strong>逐页手动旋转</strong>：缩略图条上每页有 ↺ / ↻，点一次转 90°；也可以「全部左转 / 全部右转 / 恢复自动判定」</li>
 <li>标题默认是当前时间，可改；点「开始上传」后看进度条，完成后云端多一条 type=12 笔记</li>
 <li><strong>保持窗口在前台</strong>：Chrome 会降频后台标签页，<code>page.render()</code> 可能不再返回（表现是卡在 15%），切到前台或等 60 秒超时提示</li>
@@ -1404,11 +1403,11 @@
 <li>「密码计算器」输入设备号得到当天管理员密码</li>
 </ul>
 <h3 class="text-primary">沿用上游的页签</h3>
-<p class="text-muted small">以下功能来自上游，本仓库未改动，仅列出用途：</p>
+<p class="text-muted small">以下功能来自上游，本仓库只做了局部增强（括号内注明）：</p>
 <ul>
-<li><strong>新测评</strong>：查看测评任务与详情</li>
+<li><strong>新测评</strong>：查看测评任务与详情（已增强：答案徽标、快捷对答案、显示起止时间）</li>
 <li><strong>错题本</strong>：按学科/分类筛选错题，预览图片与原始文件</li>
-<li><strong>随身答</strong>：浏览问答列表，可回复与下载图片</li>
+<li><strong>随身答</strong>：浏览问答列表，可回复与下载图片（已修复图片防盗链导致的裂图）</li>
 <li><strong>选课 / 优客畅学</strong>：选课与课程学习</li>
 <li><strong>图库 / 下载应用 / 开发工具 / 高级选项</strong>：图片浏览、App 安装包、OSS 与题库上传、代理开关</li>
 </ul>
@@ -1423,7 +1422,8 @@
 <ul>
 <li>本项目基于 <a href="https://github.com/BennyLoshop/ZhongYuToolbox" target="_blank" rel="noopener">BennyLoshop / ZhongYuToolbox</a> 的网页版工具箱，在其之上做了扩展与修复</li>
 <li>本仓库不接受捐助；要支持请直接支持原作者的 <a href="https://ifdian.net/a/loshopwu" target="_blank" rel="noopener">爱发电主页</a> 或 <a href="https://github.com/BennyLoshop" target="_blank" rel="noopener">GitHub</a></li>
-<li>AES 主密钥不在仓库里，需在 <code>web-toolbox/config.local.js</code> 自行配置（见 <code>docs/keys.md</code>）</li>
+<li>本版本为个人修改版：登录改为填写<strong>学校代码</strong>直连学校接口，不再经过作者的中转服务器；更新日志改为在本页手动展开，不再自动弹窗</li>
+<li>中育 codeUtils 种子已内置在 <code>web-toolbox/key-store.js</code>，克隆下来即可登录；<strong>领创（Linspirer）KEY / IV 不在仓库里</strong>，需自备并在 <code>web-toolbox/config.local.js</code> 配置（见 <code>docs/keys.md</code>）</li>
 <li>逐条变更见 <code>CHANGELOG.md</code></li>
 </ul>
 </div>
@@ -1431,15 +1431,15 @@
                     <div class="container mb-3">
                         <h1 class="text-primary">致谢</h1>
                         <div class="container mt-3">
-                            感谢各位的使用，我们有缘再会。
+                            感谢 <strong>Loshop</strong> 提供上游项目与原始实现。
                             <br>
-                            开发：
-                            Loshop
+                            本版本在其基础上调整，遇到问题请先对照本页说明与 <code>CHANGELOG.md</code> 排查。
                         </div>
                     </div>
 
                     <div class="container mb-3">
                         <h1 class="text-primary">更新日志</h1>
+                        <p class="text-muted small mb-2">2026/11 起为本修改版的记录；2026/6 及更早为上游原始版本的记录。</p>
                         <div class="accordion" id="accordionExample"></div>
 
                     </div>
