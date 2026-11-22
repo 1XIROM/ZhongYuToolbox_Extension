@@ -1638,13 +1638,6 @@ login_btn.onclick = async () => {
         window.API_BASE_URL = currentApiBaseUrl;
         window.API_BASE_BASE_URL = currentApiBaseUrl; // 用于判断是否使用 special 路径
 
-        // 走 zyapi 中转登录时才判断教师账号
-        if (currentApiBaseUrl === "https://zyapi.loshop.com.cn" && accountVal[0] !== "2") {
-            swal({
-                title: '提示',
-                text: '你的账号为非学生账号，功能受限(没适配)，仅可查看随身答和下载应用'
-            });
-        }
 
         $("#login_btn").prop("disabled", false);
         $("#login_btn").text("重新登录");
@@ -1654,9 +1647,6 @@ login_btn.onclick = async () => {
         $("#loginc").hide();
         // 启动 token 自动刷新
         startTokenRefresh();
-
-        // 检查并显示更新日志
-        checkAndShowUpdateLog();
 
         $("#welc2").html(message);
     }
@@ -3597,147 +3587,6 @@ function show_class() {
         }
     });
 }
-
-// ==================== 更新日志功能 ====================
-
-/**
- * 将日期字符串转换为可比较的日期对象
- * 支持格式：2024/10/4 或 2026/6/8
- * @param {string} dateStr - 日期字符串
- * @returns {Date} - 日期对象
- */
-function parseDate(dateStr) {
-    const parts = dateStr.split('/');
-    return new Date(parts[0], parts[1] - 1, parts[2]);
-}
-
-/**
- * 检查并更新日志显示
- * 如果用户已登录且更新日志有变化，则弹出更新日志模态框
- */
-async function checkAndShowUpdateLog() {
-    try {
-        // 检查用户是否已登录
-        const token = localStorage.getItem('token');
-        if (!token) {
-            return; // 未登录，不弹更新日志
-        }
-        
-        // 检查是否正在查看分享（URL中包含 share 参数）
-        const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.has('share') || window.location.hash.includes('share=')) {
-            return; // 正在查看分享，不弹更新日志
-        }
-        
-        // 从 update.json 获取更新日志
-        const response = await fetch('update.json?t=' + Date.now());
-        if (!response.ok) {
-            console.error('无法加载更新日志');
-            return;
-        }
-        
-        const updateLog = await response.json();
-        if (!updateLog || updateLog.length === 0) {
-            return;
-        }
-        
-        // 获取最新更新日期（数组最后一个元素）
-        const latestUpdate = updateLog[updateLog.length - 1];
-        const latestDate = parseDate(latestUpdate.date);
-        
-        // 从 localStorage 获取上次查看的更新日期
-        const lastViewedDateStr = localStorage.getItem('lastViewedUpdate');
-        
-        // 如果上次查看日期不存在，或者最新日期晚于上次查看日期，则显示更新日志
-        if (!lastViewedDateStr || latestDate > parseDate(lastViewedDateStr)) {
-            // 加载更新日志内容
-            await loadUpdateLog(updateLog);
-            
-            // 显示更新日志模态框
-            const updateModal = new bootstrap.Modal(document.getElementById('updateLogModal'));
-            updateModal.show();
-        }
-    } catch (error) {
-        console.error('检查更新日志失败:', error);
-    }
-}
-
-/**
- * 加载更新日志内容到模态框
- * @param {Array} updateLog - 更新日志数组
- */
-async function loadUpdateLog(updateLog) {
-    const contentContainer = document.getElementById('updateLogContent');
-    if (!contentContainer) return;
-    
-    // 清空加载提示
-    contentContainer.innerHTML = '';
-    
-    // 按日期倒序排列（确保最新的在前面）
-    const sortedLog = [...updateLog].sort((a, b) => {
-        const dateA = new Date(a.date.replace(/\//g, '-'));
-        const dateB = new Date(b.date.replace(/\//g, '-'));
-        return dateB - dateA;
-    });
-    
-    // 构建更新日志HTML
-    let html = '';
-    sortedLog.forEach(entry => {
-        html += `
-        <div class="card mb-3">
-            <div class="card-header bg-light">
-                <strong>${entry.date}</strong>
-            </div>
-            <div class="card-body">
-                <ul class="mb-0">
-                    ${entry.items.map(item => `<li>${item}</li>`).join('')}
-                </ul>
-            </div>
-        </div>`;
-    });
-    
-    contentContainer.innerHTML = html;
-}
-
-/**
- * 标记更新日志为已读
- * 将最新更新日期保存到 localStorage
- */
-function markUpdateAsRead() {
-    // 获取当前更新日志的最新日期（数组最后一个元素）
-    fetch('update.json?t=' + Date.now())
-        .then(response => response.json())
-        .then(updateLog => {
-            if (updateLog && updateLog.length > 0) {
-                const latestDate = updateLog[updateLog.length - 1].date;
-                localStorage.setItem('lastViewedUpdate', latestDate);
-            }
-        })
-        .catch(error => console.error('标记更新日志失败:', error));
-}
-
-// 在页面加载时检查更新日志（仅当用户已登录）
-document.addEventListener('DOMContentLoaded', function() {
-    // 检查用户是否已登录
-    const token = localStorage.getItem('token');
-    if (token) {
-        // 检查是否正在查看分享（URL中包含 share 参数）
-        const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.has('share') || window.location.hash.includes('share=')) {
-            return; // 正在查看分享，不弹更新日志
-        }
-        
-        // 延迟执行，确保其他初始化完成
-        setTimeout(() => {
-            checkAndShowUpdateLog();
-        }, 1000);
-    }
-});
-
-
-
-
-
 
 
 function set_ids() {

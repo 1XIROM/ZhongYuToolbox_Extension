@@ -2,6 +2,40 @@
 
 按日期倒序。每个条目都能在 `docs/` 里找到对应的复现步骤或验证数据。
 
+## 2026-11-22 — 移除「更新日志」自动弹窗；删掉「非学生账号功能受限」误报
+
+**问题一：更新日志弹窗一直弹**
+
+根本原因是这个功能**从未被真正删除**，而且即使只想「弹一次」也有三个漏洞：
+
+| 原因 | 说明 |
+| --- | --- |
+| 两处触发 | `login()` 成功后调一次；另有一个 `DOMContentLoaded` 监听，只要 localStorage 里有 token，**刷新页面就再弹一次**。只删一处等于没删 |
+| 关闭方式不写状态 | 只有点「我知道了」才调 `markUpdateAsRead()`；点右上角 × 或点遮罩关闭都不写 `lastViewedUpdate`，下次照弹 |
+| 改错副本 | 8088 起的是 `E://WorkBuddy//中育Toolbox-独立版`，改 `repo-publish` 不会生效 |
+
+处理：整块删除，不再保留「只弹一次」的语义——
+- `index.js`：删掉 `login()` 里的调用、整个 `DOMContentLoaded` 监听、`parseDate` / `checkAndShowUpdateLog` / `loadUpdateLog` / `markUpdateAsRead` 四个函数（约 3.9 KB）；
+- `index.html`：删掉 `#updateLogModal` 整块 DOM（约 1.1 KB）；
+- 保留 `loadChangelog()` 与 `update.json`——「说明&致谢」页签是用户主动点击才加载的，属于文档而非弹窗，回归验证仍渲染 24 条。
+
+**问题二：教师账号被误报「功能受限(没适配)」**
+
+判据是 `accountVal[0] !== "2"`（账号首位不是 2 即非学生），独立版里还带着这行判断；而代码里**没有任何功能真的按账号类型做限制**，纯属误报。
+
+- 三份副本统一删除该 `if` 块，不再弹这个提示；账号类型判断在全项目已无残留引用（`grep accountVal[0]` = 0）。
+
+**同步范围**：`ZhongYuToolbox-main`、`repo-publish/web-toolbox`、`E://WorkBuddy//中育Toolbox-独立版`（8088 实际服务目录）。改前备份在 `.work/backup-20261122/`。
+
+**验证**（8088 实时页面，伪造 token 后刷新等待 3 秒）：
+
+```
+hasModalNode: false | 显示中的弹窗: 0 | 遮罩: 0 | 页面文本含「更新日志」: false
+loadChangelog 仍是 function | 说明页 accordion 子节点: 24 | 未捕获异常: 无
+```
+
+三份 `index.js` 均通过 `node --check`，`checkAndShowUpdateLog / markUpdateAsRead / updateLogModal / 非学生账号` 残留计数全部为 0。
+
 ## 2026-11-19 — 竖版页自动转 90° 填满（可选）；同步进独立版
 
 App 实测（1914×1090 屏幕）：页面固定渲染为**屏高的 80%**（872px），在**整屏**居中（页中心 956 / 屏中心 957），左侧工具栏 134px 叠在上面，所以页面看起来偏左 68px、四周有 10% 格纹边距。**无论如何改画布比例都填不满屏幕**——那是 App 的缩放策略，不是页面尺寸问题。

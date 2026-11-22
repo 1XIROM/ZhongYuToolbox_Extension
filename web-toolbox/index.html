@@ -2499,30 +2499,6 @@
     })();
     </script>
 
-<!-- 更新日志 Modal -->
-<div class="modal fade" id="updateLogModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
-        <div class="modal-content rounded-3">
-            <div class="modal-header bg-primary text-white">
-                <h5 class="modal-title">更新日志</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="关闭"></button>
-            </div>
-            <div class="modal-body" id="updateLogContent">
-                <!-- 更新日志内容将通过JavaScript动态加载 -->
-                <div class="text-center py-4">
-                    <div class="spinner-border text-primary" role="status">
-                        <span class="visually-hidden">加载中...</span>
-                    </div>
-                    <p class="mt-2 text-muted">正在加载更新日志...</p>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-primary" data-bs-dismiss="modal" onclick="markUpdateAsRead()">我知道了</button>
-            </div>
-        </div>
-    </div>
-</div>
-
     <script>
         /* 专栏 iframe 高度自适应：调试版多出按钮行时不会被压扁，正常版也不会留白 */
         (function () {
