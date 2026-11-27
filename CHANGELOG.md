@@ -2,6 +2,42 @@
 
 按日期倒序。每个条目都能在 `docs/` 里找到对应的复现步骤或验证数据。
 
+## 2026-11-27 — 并入自动答题与唤醒链路（四套启动方式）
+
+独立版近两天长出了四套新的启动方式，本次并入发布版，并补齐它们依赖的模块与文档。
+
+| 脚本 | 作用 | 验证状态 |
+| --- | --- | --- |
+| `启动云笔记工具-自动答题.bat` | 原三件 + `codex-wake.ps1`：队列驱动调 Codex，失败按 `templates/failure-template.html` 出占位页 | **初版，未验收** |
+| `启动云笔记工具-图片唤醒.bat` | 原三件 + `wake_on_image.py`（按 md5 精确匹配 `wake_refs.json`）+ `wake_workbuddy.py` | 仅 WorkBuddy 桌面版 + Windows + 深色主题 |
+| `启动云笔记工具-笔记唤醒.bat` | 原三件 + `wake_on_note.py`（`input/` 每出现新目录即触发） | 同上 |
+| `启动云笔记工具-笔记答题.bat` | 扫云笔记 → 读图 → 调 DeepSeek → `output/<label>_回答.md` | **初版，未验收** |
+
+两个「自动答题」都还没在完整链路上验收：多图题、超页压缩、失败重试、断点续答只有零散验证，没有回归测试。建议先 `/dry` 看计划，再 `/limit 1` 跑一条。
+
+**适配发布版结构**
+
+- 两个唤醒 bat 的 `SERVE_SCRIPT` 改为 `web-toolbox\serve.js`（独立版是扁平结构），并加两处回退：探测不到外部流水线时 `WATCH_DIR=%REPO_DIR%\pipeline`；找不到唤醒脚本时 `SCRIPTS=%REPO_DIR%\pipeline\scripts`。改完仍保持纯 ASCII + CRLF。
+- `note_answer.py` 的 `find_toolbox` 改成同时认 `serve.js` 与 `web-toolbox/serve.js` 两种入口，`E:\WorkBuddy` 改为可用 `ANSWER_WORKBUDDY_ROOT` 覆盖。
+- 发布版的 `answer_pipeline` 是旧拷贝，缺 `apiclient.py` / `solver.py`，`note_answer.py` 一导入就 `ImportError`；两个文件已补齐。
+
+**文档**
+
+- 新增 `pipeline/AGENTS.md`（`codex-wake.ps1` 投递的提示词会引用它）、`docs/answer-pipeline-prompt-codex.md`（Codex 版交接提示词，含搜索规则）、`pipeline/提示词-外部AI接管答题链路.md`（写作规范的抽取来源）。
+- README 补五类启动方式、各自适用范围、两个自动答题脚本的「初版 · 未验证可行性」标注，以及云笔记下载与自动作答的匹配规则（标题含 `ds`、`input/` 目录命名、忽略 `*.mdb`/`*.bin`）。
+- `update.json` 增至 38 条（新增 2026/11/27）。
+
+**验证**
+
+- 三个新 bat 的 `/dry` 均正常，`WATCH_DIR` 正确解析到流水线目录，未启动任何进程。
+- `笔记答题.bat /dry` 跑到「引擎 harness、写作规范 2142 字符、待处理 10 条（标题含 `ds`）」后停止，未调模型、未写 `output/`。
+- 唤醒链路的 UI 定位只在 WorkBuddy 深色主题下可用（`wake_workbuddy.py` 按亮度 24～52 的「面板色」认输入框）；换成浅色主题或其他客户端会定位失败。
+
+**已知问题**
+
+- `/dry` 只跳过模型与 `output/`，**仍会执行云笔记扫描并下载**；首次测试会往 `pipeline/input/` 落真实笔记目录。这些目录被 `.gitignore` 的 `input/` 覆盖，不会进仓库，但会占本地空间。
+- `codex-wake.ps1` 与 `launch-auto.ps1` 里写死了本机路径（`E:\WorkBuddy\题目`、`E:\Program Files\Codex\codex.cmd`、profile `wb`），换机器需要改。
+
 ## 2026-11-24 — 新增 API 版答题提示词：去掉哨兵与定时任务
 
 原来的 [`docs/answer-pipeline-prompt.md`](docs/answer-pipeline-prompt.md) 假设答题者**常驻本机、盯着 `input/` 等新素材**，所以整套提示词里塞了大量「等」的机制：`watch` + `wait` 双哨兵、每小时 automation 兜底、`status` 反复查队列、处理完再重挂。这些不是答题本身需要的，而是为了补上「谁来叫醒它」这个缺口，代价是两条长期进程加一个定时任务。
