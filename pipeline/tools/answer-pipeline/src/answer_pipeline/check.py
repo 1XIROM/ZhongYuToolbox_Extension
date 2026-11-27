@@ -19,14 +19,22 @@ RULE_COUNT = 11
 
 
 def math_expected(md_path: Optional[str]) -> int:
-    """统计草稿里的公式个数，用于核对渲染后节点数是否够。"""
+    """统计草稿里的公式个数，用于核对渲染后节点数是否够。
+
+    要按「修正后」的文本数：标题里的 `$` 会被 normalize_md 去掉（标题按
+    纯文字输出），若仍按原稿计数，会永远多算一个、把正常成品判成未通过。
+    """
     if not md_path:
         return 0
     try:
         text = Path(md_path).read_text(encoding="utf-8")
     except Exception:
         return 0
-    return len(re.findall(r"\$\$[\s\S]+?\$\$|\$[^$\n]+?\$", text))
+    from .render import normalize_md
+    text, _ = normalize_md(text)
+    # 标题行不参与渲染公式，计数时排除
+    body = "\n".join(ln for ln in text.splitlines() if not ln.startswith("## "))
+    return len(re.findall(r"\$\$[\s\S]+?\$\$|\$[^$\n]+?\$", body))
 
 
 def check_html(html_path, md_path: Optional[str] = None) -> Tuple[bool, List[str], dict]:
@@ -84,8 +92,13 @@ def check_html(html_path, md_path: Optional[str] = None) -> Tuple[bool, List[str
 
 
 def publish(cfg: Config, html_path, md_path: Optional[str] = None,
-            quiet: bool = False) -> Optional[Path]:
-    """校验通过才把缓存成品移入 output；返回最终路径，失败返回 None。"""
+            quiet: bool = False, force: bool = False) -> Optional[Path]:
+    """校验通过才把缓存成品移入 output；返回最终路径，失败返回 None。
+
+    成品一旦进了 output 就是终版（2026-11-15 用户要求「一次成功、不再修改」），
+    所以目标已存在时默认拒绝覆盖，必须显式 force 才允许替换。
+    以前这里是先 unlink 再 move，等于静默覆盖，改坏了也看不出来。
+    """
     src = Path(html_path).resolve()
     ok, problems, stats = check_html(src, md_path)
     if not ok:
@@ -101,6 +114,19 @@ def publish(cfg: Config, html_path, md_path: Optional[str] = None,
     cfg.output_dir.mkdir(parents=True, exist_ok=True)
     dest = cfg.output_dir / src.name
     if dest.exists():
+        try:
+            same = dest.read_bytes() == src.read_bytes()
+        except OSError:
+            same = False
+        if same:
+            if not quiet:
+                print(f"[publish] 与已发布的 {dest.name} 内容一致，不重复发布")
+            return dest
+        if not force:
+            if not quiet:
+                print(f"[publish] 拒绝覆盖：{dest.name} 已在 output 中。")
+                print("          发布即终版，确需替换请加 --force 并说明原因。")
+            return None
         dest.unlink()
     shutil.move(str(src), str(dest))
     if not quiet:

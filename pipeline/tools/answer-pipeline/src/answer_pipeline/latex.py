@@ -15,9 +15,13 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 import urllib.request
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
+
+from .lock import FileLock, LockTimeout
 
 CDN = "https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/"
 PKG_ASSETS = Path(__file__).resolve().parent / "assets" / "katex"
@@ -48,6 +52,36 @@ ENV_CHROME = ("ANSWER_CHROME", "CHROME_PATH", "GOOGLE_CHROME_SHIM")
 
 class ChromeNotFound(RuntimeError):
     pass
+
+
+@contextmanager
+def _chrome_slot(work: Path, slots: int = 4, timeout: float = 300.0):
+    """抢一个空闲的 Chrome profile 槽位，用完释放。
+
+    Chrome 对同一个 user-data-dir 是独占的，两个进程同时用一个会直接以
+    profile in use 退出。这里把 profile 做成固定几个槽：谁先抢到谁用，
+    不同槽之间完全并行，槽满了就等——既不会撞车，也不会把并发压成串行。
+
+    用非阻塞 try-lock 而不是排队锁：排队会让所有进程挤在同一个槽上，
+    等于没有并发。
+    """
+    deadline = time.monotonic() + timeout
+    while True:
+        for idx in range(slots):
+            suffix = "" if idx == 0 else f"-{idx}"
+            lock = FileLock(work / f".chrome{suffix}.lock", timeout=0)
+            try:
+                lock.acquire()
+            except LockTimeout:
+                continue
+            try:
+                yield suffix
+            finally:
+                lock.release()
+            return
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f"等待可用的渲染槽超时（{timeout}s，共 {slots} 个槽）")
+        time.sleep(0.15)
 
 
 def find_chrome(explicit: Optional[str] = None) -> Optional[str]:
@@ -121,6 +155,30 @@ class KatexAssets:
         return css
 
 
+_MEASURE_JS = r"""
+(function () {
+  var secs = document.querySelectorAll('section.page');
+  if (!secs.length) return;
+  var hs = [];
+  for (var i = 0; i < secs.length; i++) {
+    var s = secs[i];
+    // `.page + .page` 带 18px 上间距 + 12px 内边距 + 1px 边框，
+    // 这些是页与页的间隔，不属于本题内容，测之前临时清零，测完还原。
+    var old = s.getAttribute('style');
+    s.style.marginTop = '0px';
+    s.style.paddingTop = '0px';
+    s.style.borderTopWidth = '0px';
+    hs.push(Math.round(s.getBoundingClientRect().height));
+    // 只要碰过 CSSOM，Chrome 序列化时就会留下 style=""，成品里会多一个空属性，
+    // 还会让「<section class="page">」的精确匹配失效。这里一律清掉原值。
+    if (old === null) s.removeAttribute('style'); else s.setAttribute('style', old);
+    if (s.getAttribute('style') === '') s.removeAttribute('style');
+  }
+  document.body.setAttribute('data-block-heights', hs.join(','));
+})();
+"""
+
+
 _MATH_JS = r"""
 (function () {
   var RE = /\$\$([\s\S]+?)\$\$|\$([^$\n]+?)\$/g;
@@ -162,8 +220,16 @@ _MATH_JS = r"""
 
 def prerender(body_html: str, page_css: str = "", *, chrome: Optional[str] = None,
               assets: Optional[KatexAssets] = None, work_dir: Optional[Path] = None,
-              timeout: int = 180) -> str:
-    """在本地浏览器里把 $...$ 渲染成静态节点，返回 body 片段。
+              timeout: int = 180, with_math: bool = True,
+              measure: bool = True) -> str:
+    """在本地浏览器里把 $...$ 渲染成静态节点，返回 (body, stats)。
+
+    with_math=False 时跳过 KaTeX，只做布局测量（纯文字题用，省掉 270KB 脚本解析）；
+    measure=True 时顺带量出每个 <section class="page"> 的实际高度，
+    结果在返回的 stats["heights"] 里，用来判断有没有超出一页。
+
+    Chrome profile 走槽位池（见 _chrome_slot），所以线程池批量渲、多个进程
+    同时渲都不会抢同一个 user-data-dir，也不用手工指定槽号。
 
     找不到浏览器时抛 ChromeNotFound，由调用方决定提示还是降级，
     不再静默退化成纯文本公式（那会让成品“能过校验但排版是坏的”）。
@@ -176,29 +242,46 @@ def prerender(body_html: str, page_css: str = "", *, chrome: Optional[str] = Non
     assets = assets or KatexAssets()
     work = Path(work_dir or assets.cache_dir)
     work.mkdir(parents=True, exist_ok=True)
-    katex_js = assets.locate("katex.min.js").read_text(encoding="utf-8")
-    tmp = work / "_prerender.html"
-    tmp.write_text(
-        "<!DOCTYPE html><html><head><meta charset='utf-8'><style>"
-        + page_css + "\n" + assets.css()
-        + "</style></head><body><div class='doc'>" + body_html
-        + "</div><script>" + katex_js + "</script><script>" + _MATH_JS + "</script>"
-        + "</body></html>", encoding="utf-8")
-    r = subprocess.run(
-        [exe, "--headless=new", "--disable-gpu", "--no-sandbox",
-         "--user-data-dir=" + str(work / "chrome-profile"),
-         "--virtual-time-budget=8000", "--dump-dom", tmp.as_uri()],
-        capture_output=True, text=True, encoding="utf-8", errors="replace",
-        timeout=timeout)
+    scripts = ""
+    if with_math:
+        katex_js = assets.locate("katex.min.js").read_text(encoding="utf-8")
+        scripts += "<script>" + katex_js + "</script><script>" + _MATH_JS + "</script>"
+    if measure:
+        scripts += "<script>" + _MEASURE_JS + "</script>"
+
+    with _chrome_slot(work) as suffix:
+        profile = work / ("chrome-profile" + suffix)
+        tmp = work / f"_prerender{suffix}.html"
+        tmp.write_text(
+            "<!DOCTYPE html><html><head><meta charset='utf-8'><style>"
+            + page_css + "\n" + assets.css()
+            + "</style></head><body><div class='doc'>" + body_html
+            + "</div>" + scripts
+            + "</body></html>", encoding="utf-8")
+        r = subprocess.run(
+            [exe, "--headless=new", "--disable-gpu", "--no-sandbox",
+             "--user-data-dir=" + str(profile),
+             "--virtual-time-budget=8000", "--dump-dom", tmp.as_uri()],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=timeout)
     dom = r.stdout or ""
     m = re.search(r"<body[^>]*>([\s\S]*)</body>", dom, re.I)
     if not m:
         raise RuntimeError("预渲染未取到 DOM：" + (r.stderr or "")[-400:])
     body = re.sub(r"<script[\s\S]*?</script>", "", m.group(1))
-    body = re.sub(r'\sdata-math-(?:count|failed)="\d+"', "", body)
-    prerender.last_stats = {"math": body.count('class="katex"'),
-                            "failed": body.count("katex-error")}
-    return body
+    heights: list = []
+    # 属性挂在 <body> 上，而 body 片段是从 <body ...> 之后截的，
+    # 所以必须从整篇 dom 里取，不能从 body 里取。
+    hm = re.search(r'data-block-heights="([\d,]*)"', dom)
+    if hm and hm.group(1):
+        heights = [int(x) for x in hm.group(1).split(",") if x.isdigit()]
+    body = re.sub(r'\sdata-(?:math-(?:count|failed)|block-heights)="[^"]*"', "", body)
+    stats = {"math": body.count('class="katex"'),
+             "failed": body.count("katex-error"),
+             "heights": heights}
+    # 并发渲多份时这个属性会被别的线程覆盖，调用方必须用返回值里的 stats。
+    prerender.last_stats = stats
+    return body, stats
 
 
-prerender.last_stats = {"math": 0, "failed": 0}
+prerender.last_stats = {"math": 0, "failed": 0, "heights": []}

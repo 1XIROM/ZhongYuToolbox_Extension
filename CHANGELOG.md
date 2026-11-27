@@ -40,7 +40,7 @@
 
 - `/dry` 只跳过模型与 `output/`，**仍会执行云笔记扫描并下载**；首次测试会往 `pipeline/input/` 落真实笔记目录。这些目录被 `.gitignore` 的 `input/` 覆盖，不会进仓库，但会占本地空间。
 - `codex-wake.ps1` 与 `launch-auto.ps1` 里写死了本机路径（`E:\WorkBuddy\题目`、`E:\Program Files\Codex\codex.cmd`、profile `wb`），换机器需要改。
-- **发布版的 `render.py` / `cli.py` 仍落后于任务目录版本**：缺 `normalize_md` 自动修正、图片/表格渲染、块高实测。提示词里的「工具能力与版本差异」表说明了如何判断并如何在旧版下退化处理，但要让这些能力真正生效，需要同步这两个文件（尚未做）。
+- **发布版渲染层已同步**（同日补做）：`render.py` / `cli.py` / `latex.py` / `check.py` / `queue.py` 五个文件已与任务目录一致。注意 `latex.py` 必须一起换——新版 `cli.py` 调 `prerender(..., with_math=)`，只换前两个会报 `unexpected keyword argument 'with_math'`。同步后 `normalize_md` 自动修正、图片/表格渲染、块高实测（711 上限 / 680 安全线）均生效，`solve` / `answer` 子命令也一并可用。
 
 ## 2026-11-24 — 新增 API 版答题提示词：去掉哨兵与定时任务
 

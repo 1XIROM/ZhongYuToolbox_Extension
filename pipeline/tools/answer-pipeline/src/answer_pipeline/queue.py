@@ -57,6 +57,8 @@ def _file_md5(path: Path) -> str:
     st = path.stat()
     key = (str(path), st.st_mtime_ns, st.st_size)
     if key not in _DIGEST_CACHE:
+        if len(_DIGEST_CACHE) > 4096:
+            _DIGEST_CACHE.clear()
         _DIGEST_CACHE[key] = hashlib.md5(path.read_bytes()).hexdigest()
     return _DIGEST_CACHE[key]
 
@@ -85,14 +87,45 @@ def folder_digest(folder: Path, files: List[Path], with_paths: bool = False) -> 
     return h.hexdigest()
 
 
+_FOLDER_MEMO: Dict[tuple, tuple] = {}
+
+
+def _folder_signature(folder: Path, files: List[Path]) -> tuple:
+    """廉价签名：文件名 + 大小 + 修改时间。没变就不必重算内容哈希。"""
+    items = []
+    for p in files:
+        try:
+            st = p.stat()
+        except OSError:
+            continue
+        items.append((p.relative_to(folder).as_posix(), st.st_size, st.st_mtime_ns))
+    return (str(folder), tuple(items))
+
+
+def folder_digests(folder: Path, files: List[Path]) -> tuple:
+    """返回 (只认内容的指纹, 路径参与哈希的旧指纹)，同一签名只算一次。
+
+    哨兵每秒扫一遍，若每轮都对全部素材重算哈希，长跑会拖内存与磁盘。
+    """
+    sig = _folder_signature(folder, files)
+    hit = _FOLDER_MEMO.get(sig)
+    if hit is None:
+        hit = (folder_digest(folder, files, with_paths=False),
+               folder_digest(folder, files, with_paths=True))
+        if len(_FOLDER_MEMO) > 512:
+            _FOLDER_MEMO.clear()
+        _FOLDER_MEMO[sig] = hit
+    return hit
+
+
 def folder_already_seen(processed: Dict[str, dict], folder: Path, files: List[Path]) -> Optional[str]:
     """返回命中的旧键（若有）。
 
     历史上加入过带路径的算法，产生的键仍然有效；否则升级后所有老素材
     都会被当成新任务重新入队。
     """
-    for with_paths in (False, True):
-        key = "dir:" + folder_digest(folder, files, with_paths=with_paths)
+    for digest in folder_digests(folder, files):
+        key = "dir:" + digest
         if key in processed:
             return key
     return None
@@ -134,12 +167,18 @@ def collect_folder(folder: Path) -> dict:
     images = [p for p in files if p.suffix.lower() in IMAGE_EXT]
     pdfs = [p for p in files if p.suffix.lower() == ".pdf"]
     materials = images + pdfs
-    primary = next((p for p in images if "screenshot" in p.name.lower()), None)
+    # 云端笔记里的 00_screenshot.png 是整页预览：包含大片纸面空白，题目被等比缩小，
+    # 小字号和图形刻度很容易读错。真正的题目原图是同目录里那个带 uuid 的 jpg/png
+    # （resources.json 里 type=0）。所以主素材优先取原图，screenshot 只作整页兜底。
+    originals = [p for p in images if "screenshot" not in p.name.lower()]
+    primary = originals[0] if originals else next(
+        (p for p in images if "screenshot" in p.name.lower()), None)
     if primary is None and materials:
         primary = materials[0]
     meta = folder / "resources.json"
     return {"files": files, "materials": materials, "primary": primary,
-            "meta": meta if meta.exists() else None, "pdfs": pdfs}
+            "meta": meta if meta.exists() else None, "pdfs": pdfs,
+            "preview": next((p for p in images if "screenshot" in p.name.lower()), None)}
 
 
 def is_settled(files: List[Path], settle_seconds: float) -> bool:
@@ -190,6 +229,7 @@ def scan(cfg: Config) -> List[dict]:
                       for p in files],
             "materials": [cfg.rel(p) for p in info["materials"]],
             "primary_file": cfg.rel(primary) if primary else None,
+            "preview_file": cfg.rel(info["preview"]) if info.get("preview") else None,
             "resources_json": cfg.rel(info["meta"]) if info["meta"] else None,
             "pdf_files": [cfg.rel(p) for p in info["pdfs"]],
             **_record_paths(cfg, label),
@@ -319,6 +359,9 @@ def mark_done(cfg: Config, queue_path, md: Optional[str], html: Optional[str],
                     return {"_publish_failed": str(hp)}
                 hp = published
             rec["output_html"] = cfg.rel(hp)
+            # 曾被 skip、现在补交了成品：清掉跳过标记，免得记录自相矛盾
+            rec.pop("skipped", None)
+            rec.pop("skip_reason", None)
         save_record(cfg, rec)
         mf = Manifest(cfg)
         data = mf.load()
@@ -326,6 +369,9 @@ def mark_done(cfg: Config, queue_path, md: Optional[str], html: Optional[str],
         if key in data["processed"]:
             data["processed"][key]["status"] = "done"
             data["processed"][key]["finished_at"] = rec["finished_at"]
+            # 补交过成品就不再是 skipped，旧 note 一并去掉
+            if rec.get("output_html"):
+                data["processed"][key].pop("note", None)
         mf.save(data)
         return rec
 
