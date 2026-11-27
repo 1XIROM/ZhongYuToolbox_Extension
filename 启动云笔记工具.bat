@@ -1,13 +1,19 @@
 @echo off
 setlocal
-title Toolbox Launcher
+title CloudNote pipeline launcher
 
 rem ============================================================
-rem  One-click start for the three background tasks:
+rem  One-click start for the cloud-note upload/download pipeline.
+rem  It needs three pieces, all started here:
 rem    1) static server http://127.0.0.1:8088  (web-toolbox\serve.js)
-rem    2) Chrome debug instance on port 9222
+rem    2) Chrome debug instance on port 9222  (the page the script drives)
 rem    3) cloud-note watch (html2note.js --watch --check-cloud)
 rem  Already-running tasks are skipped (no duplicates).
+rem
+rem  Just browsing the toolbox?  Do NOT use this file - it would
+rem  leave a watch process running.  Use the viewer script instead
+rem  (the one that only opens the browser).
+rem
 rem  Run with no argument for a normal start, or with /dry to
 rem  print the actions without starting anything.
 rem
@@ -16,6 +22,8 @@ rem  To pin an OSS host to a fixed IP, add a Chrome flag such as
 rem    --host-resolver-rules="MAP oss-host ip-address"
 rem  Angle brackets are avoided on purpose: cmd reads them as
 rem  redirection even inside rem lines.
+rem  This file is deliberately ASCII-only: cmd parses batch files in
+rem  the system code page, and non-ASCII comments get mis-decoded.
 rem ============================================================
 
 set "REPO_DIR=%~dp0"
@@ -33,10 +41,11 @@ set "DRY="
 if /I "%~1"=="/dry" set "DRY=1"
 
 echo ============================================================
-echo   Toolbox launcher
+echo   CloudNote pipeline launcher (upload + download)
 echo   1) static server 127.0.0.1:8088
 echo   2) Chrome debug 127.0.0.1:9222
 echo   3) cloud-note watch (--watch --check-cloud)
+echo   browsing only? use the viewer script instead
 echo ============================================================
 echo.
 
@@ -95,5 +104,8 @@ echo log     : %WATCH_DIR%\logs
 echo ------------------------------------------------------------
 echo.
 echo You can close this window; each task runs in its own window.
+echo To stop the pipeline close the "CloudNote watch" window
+echo (or run taskkill on that node process); the 8088 server and
+echo the debug Chrome can keep running for the viewer script.
 ping -n 6 127.0.0.1 >nul
 exit /b 0

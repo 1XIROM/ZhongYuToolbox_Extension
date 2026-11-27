@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>{{TITLE}}</title>
+<style>
+  @page { size: 1240px 1754px; margin: 0; }
+  html,body { margin:0; padding:0; }
+  body { font-family: "Microsoft YaHei","PingFang SC",sans-serif; color:#1f2328; background:#fff;
+         width:1240px; padding:56px 64px; box-sizing:border-box; }
+  .tag { display:inline-block; font-size:20px; letter-spacing:2px; color:#b42318; border:2px solid #f3c0bb;
+         background:#fff5f4; border-radius:8px; padding:6px 16px; }
+  h1 { font-size:40px; margin:22px 0 6px; }
+  .sub { font-size:20px; color:#57606a; margin-bottom:28px; }
+  .box { border:1px solid #d0d7de; border-radius:12px; padding:26px 30px; margin:22px 0; }
+  .box h2 { font-size:24px; margin:0 0 12px; color:#1f2328; }
+  .kv { font-size:20px; line-height:1.85; }
+  .kv b { display:inline-block; min-width:96px; color:#57606a; font-weight:600; }
+  pre { font-family: Consolas,"Courier New",monospace; font-size:16px; line-height:1.6;
+        background:#f6f8fa; border-radius:8px; padding:18px; white-space:pre-wrap; word-break:break-all; margin:0; }
+  .hint { font-size:20px; line-height:1.9; }
+  .foot { margin-top:28px; font-size:17px; color:#8c959f; }
+</style>
+</head>
+<body>
+  <span class="tag">自动答题未完成</span>
+  <h1>{{TITLE}}</h1>
+  <div class="sub">生成时间：{{TIME}}</div>
+
+  <div class="box">
+    <h2>这一次为什么没有产出答案</h2>
+    <div class="kv">
+      <div><b>任务编号</b>{{TASKID}}</div>
+      <div><b>素材位置</b>{{SOURCE}}</div>
+      <div><b>失败原因</b>{{REASON}}</div>
+    </div>
+  </div>
+
+  <div class="box">
+    <h2>详细情况</h2>
+    <div class="hint">{{DETAIL}}</div>
+  </div>
+
+  <div class="box">
+    <h2>程序输出（末尾部分）</h2>
+    <pre>{{LOGTAIL}}</pre>
+  </div>
+
+  <div class="box">
+    <h2>怎么处理</h2>
+    <div class="hint">{{HINT}}</div>
+  </div>
+
+  <div class="foot">由 codex-wake.ps1 自动生成 · 该任务已停止重试，不会重复消耗额度</div>
+</body>
+</html>
